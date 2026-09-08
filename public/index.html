@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -72,7 +72,7 @@ label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bot
 .tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
 .alert{padding:10px 12px;border-radius:10px;font-size:13px;margin-bottom:12px}
 .alert-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
-/* Report Card Premium — A4 High Clarity */
+/* Report Card Premium - A4 High Clarity */
 .a4-wrap{ display:flex; justify-content:center; background:#e2e8f0; padding:20px; border-radius:12px; }
 .rc-paper{ background:#fff; border:1.2px solid #0f172a; width:210mm; min-height:297mm; margin:0 auto; overflow:hidden; box-shadow:0 12px 36px rgba(15,23,42,.14); font-family:Inter,sans-serif; font-size:12px; line-height:1.45; color:#0f172a; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .rc-paper *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -107,16 +107,16 @@ label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bot
   <div class="login-card">
     <div style="text-align:center;margin-bottom:10px"><span style="background:var(--primary);color:#fff;padding:6px 10px;border-radius:10px;font-weight:800;letter-spacing:.06em">EDUCONTROL</span></div>
     <h1>ONE SCHOOL. ONE SYSTEM.</h1>
-    <p class="sub">Complete Control — Academic • Finance • Medical • Transport</p>
+    <p class="sub">Complete Control - Academic | Finance | Medical | Transport</p>
     <div style="display:grid;gap:12px">
       <input id="username" class="input" placeholder="Username" value="admin">
       <input id="password" class="input" type="password" placeholder="Password" value="admin123">
-      <button class="btn" onclick="login()">Sign In →</button>
-      <p style="font-size:11px;color:var(--muted);text-align:center">Demo: <b>admin / admin123</b> • bursar / bursar123 • teacher1 / teacher123 • nurse / nurse123</p>
+      <button class="btn" onclick="login()">Sign In -></button>
+      <p style="font-size:11px;color:var(--muted);text-align:center">Demo: <b>admin / admin123</b> | bursar / bursar123 | teacher1 / teacher123 | nurse / nurse123</p>
       <p id="loginErr" style="color:var(--danger);font-size:13px;text-align:center"></p>
     </div>
     <div style="margin-top:14px;background:#f8fafc;border:1px dashed var(--border);border-radius:10px;padding:10px;font-size:11px;color:var(--muted)">
-      <b>Best Free Hosting:</b> <span style="color:var(--primary);font-weight:700">Render</span> (full-stack + DB) — recommended. Also supports Vercel + Neon Postgres or Firebase. GitHub Pages / Netlify are static-only — not suitable for this system.
+      <b>Best Free Hosting:</b> <span style="color:var(--primary);font-weight:700">Render</span> (full-stack + DB) - recommended. Also supports Vercel + Neon Postgres or Firebase. GitHub Pages / Netlify are static-only - not suitable for this system.
     </div>
   </div>
 </div>
@@ -209,14 +209,14 @@ function renderNav(){
     const d=document.createElement('div'); d.className='nav-item'; d.id='nav-'+it.id; d.innerHTML=`<i class="${it.icon}"></i> ${it.label}`; d.onclick=()=> navigate(it.id); nav.appendChild(d);
   });
   // show role badge
-  const rb = document.getElementById('userRole'); if(rb) rb.innerHTML = user.role + (user.role==='admin'? ' • Full Access' : user.role==='bursar'? ' • Finance' : user.role==='teacher'? ' • Academic' : user.role==='nurse'? ' • Medical' : user.role==='headteacher'?' • Head Teacher':'');
+  const rb = document.getElementById('userRole'); if(rb) rb.innerHTML = user.role + (user.role==='admin'? ' | Full Access' : user.role==='bursar'? ' | Finance' : user.role==='teacher'? ' | Academic' : user.role==='nurse'? ' | Medical' : user.role==='headteacher'?' | Head Teacher':'');
 }
 function navigate(id){
   const item = navItems.find(n=>n.id===id);
   if(item && !canAccess(item.perm)){
     $('#content').innerHTML=`<div class="card" style="text-align:center; padding:40px;"><i class="ri-lock-2-line" style="font-size:36px; color:var(--danger)"></i><h3 style="margin-top:10px;">Access Denied</h3><p class="muted" style="margin-top:6px;">Your role <b>${user.role}</b> cannot access <b>${item.label}</b>.</p><p class="muted">Allowed for: ${Object.entries(ROLES).filter(([r,perms])=> perms.includes(item.perm) || perms.includes(item.perm.split(':')[0]) || perms.includes('*')).map(([r])=>r).join(', ') || 'admin only'}</p><button class="btn btn-sm" style="margin-top:12px;" onclick="navigate('dashboard')">Back to Dashboard</button></div>`;
     document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
-    $('#pageTitle').textContent = item.label + ' — Restricted';
+    $('#pageTitle').textContent = item.label + ' - Restricted';
     return;
   }
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
@@ -258,14 +258,14 @@ async function apiDel(url){ const r=await fetch(url,{method:'DELETE', headers:au
 function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
 function closeModal(){ $('#modal').classList.remove('open'); }
 
-// DASHBOARD — Role-Specific
+// DASHBOARD - Role-Specific
 async function renderDashboard(){
   const d=await apiGet('/api/dashboard');
   const role = user.role;
   const isAdmin = role==='admin', isHead = role==='headteacher', isTeacher = role==='teacher', isBursar = role==='bursar', isNurse = role==='nurse';
-  const titleMap = {admin:'Admin Control Centre', headteacher:'Head Teacher Dashboard', teacher:'Teacher Dashboard', bursar:'Bursar — Finance Centre', nurse:'Sickbay Dashboard'};
+  const titleMap = {admin:'Admin Control Centre', headteacher:'Head Teacher Dashboard', teacher:'Teacher Dashboard', bursar:'Bursar - Finance Centre', nurse:'Sickbay Dashboard'};
   $('#pageTitle').textContent = titleMap[role] || 'Dashboard';
-  let html = `<div class="alert" style="background:${isTeacher?'#eff6ff':isBursar?'#fefce8':isNurse?'#fdf2f8':'#f0fdf4'}; border:1px solid ${isTeacher?'#bfdbfe':isBursar?'#fde68a':isNurse?'#fbcfe8':'#bbf7d0'}; display:flex; justify-content:space-between; align-items:center;"><div><b>${titleMap[role]}</b> <span class="muted">— ${user.name}</span> <span class="badge badge-blue" style="margin-left:6px;">${role}</span></div><span class="muted" style="font-size:11px;">${isAdmin?'Full access to all modules':isHead?'Academic + finance overview':isTeacher?'Academic • Attendance • Exams • Report Cards':isBursar?'Finance • Payroll • Fees • Reports':isNurse?'Medical • Sickbay • Students view'}</span></div>`;
+  let html = `<div class="alert" style="background:${isTeacher?'#eff6ff':isBursar?'#fefce8':isNurse?'#fdf2f8':'#f0fdf4'}; border:1px solid ${isTeacher?'#bfdbfe':isBursar?'#fde68a':isNurse?'#fbcfe8':'#bbf7d0'}; display:flex; justify-content:space-between; align-items:center;"><div><b>${titleMap[role]}</b> <span class="muted">- ${user.name}</span> <span class="badge badge-blue" style="margin-left:6px;">${role}</span></div><span class="muted" style="font-size:11px;">${isAdmin?'Full access to all modules':isHead?'Academic + finance overview':isTeacher?'Academic | Attendance | Exams | Report Cards':isBursar?'Finance | Payroll | Fees | Reports':isNurse?'Medical | Sickbay | Students view':''}</span></div>`;
 
   if(isBursar){
     html += `
@@ -273,7 +273,7 @@ async function renderDashboard(){
       <div class="card stat"><div><div class="muted">Fees Collected</div><div class="kpi">${fmtMoney(d.fees)}</div><div class="muted">Term I</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-wallet-3-line"></i></div></div>
       <div class="card stat"><div><div class="muted">Expenses</div><div class="kpi" style="color:var(--danger)">${fmtMoney(d.expenses)}</div><div class="muted">Cash ${fmtMoney(d.fees-d.expenses)}</div></div><div class="stat-icon" style="background:#fee2e2;color:#991b1b"><i class="ri-exchange-dollar-line"></i></div></div>
       <div class="card stat"><div><div class="muted">Net Balance</div><div class="kpi" style="color:${d.fees-d.expenses>=0?'var(--success)':'var(--danger)'}">${fmtMoney(d.fees-d.expenses)}</div><div class="muted">Income–Expenses</div></div><div class="stat-icon" style="background:#dcfce7;color:#166534"><i class="ri-scales-3-line"></i></div></div>
-      <div class="card stat"><div><div class="muted">Pending Payroll</div><div class="kpi">${fmt(d.staff)}</div><div class="muted">Staff • Generate monthly</div></div><div class="stat-icon" style="background:#e0f2fe;color:#0369a1"><i class="ri-money-dollar-circle-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Pending Payroll</div><div class="kpi">${fmt(d.staff)}</div><div class="muted">Staff | Generate monthly</div></div><div class="stat-icon" style="background:#e0f2fe;color:#0369a1"><i class="ri-money-dollar-circle-line"></i></div></div>
     </div>
     <div class="grid grid2" style="margin-top:16px;">
       <div class="card"><h4>Fees Trend (6 months)</h4><canvas id="c1" height="140"></canvas></div>
@@ -296,7 +296,7 @@ async function renderDashboard(){
     </div>
     <div class="grid grid2" style="margin-top:16px;">
       <div class="card"><h4>Students by Class</h4><canvas id="c2" height="140"></canvas></div>
-      <div class="card"><h4>Attendance — Last 7 Days</h4><canvas id="c4" height="140"></canvas></div>
+      <div class="card"><h4>Attendance - Last 7 Days</h4><canvas id="c4" height="140"></canvas></div>
     </div>
     <div class="card" style="margin-top:16px;"><h4>Teacher Quick Actions</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
       <button class="btn btn-sm" onclick="navigate('attendance')"><i class="ri-calendar-check-line"></i> Mark Attendance</button>
@@ -304,7 +304,7 @@ async function renderDashboard(){
       <button class="btn btn-sm btn-outline" onclick="navigate('reportcards')">Report Cards (A4 PDF)</button>
       <button class="btn btn-sm btn-outline" onclick="navigate('aitutor')">AI Tutor</button>
       <button class="btn btn-sm btn-outline" onclick="navigate('classes')">My Classes</button>
-    </div><div class="alert alert-info" style="margin-top:10px;">You have <b>Academic access only</b> — Finance, Payroll, Sickbay edit and Backup are restricted (403).</div></div>`;
+    </div><div class="alert alert-info" style="margin-top:10px;">You have <b>Academic access only</b> - Finance, Payroll, Sickbay edit and Backup are restricted (403).</div></div>`;
   } else if(isNurse){
     html += `
     <div class="grid grid4" style="margin-top:14px;">
@@ -317,9 +317,9 @@ async function renderDashboard(){
       <button class="btn btn-sm" onclick="navigate('sickbay')"><i class="ri-heart-pulse-line"></i> New Sickbay Visit</button>
       <button class="btn btn-sm btn-outline" onclick="navigate('students')">View Students</button>
       <button class="btn btn-sm btn-outline" onclick="navigate('sickbay')">Medical Stock</button>
-    </div><div class="alert alert-info" style="margin-top:10px;">You have <b>Medical access only</b> — Finance, Exams, Payroll and Backup are restricted (403).</div></div>`;
+    </div><div class="alert alert-info" style="margin-top:10px;">You have <b>Medical access only</b> - Finance, Exams, Payroll and Backup are restricted (403).</div></div>`;
   } else {
-    // Admin + Headteacher — full
+    // Admin + Headteacher - full
     html += `
     <div class="grid grid4">
       <div class="card stat"><div><div class="muted">Total Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">Active</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
@@ -342,7 +342,7 @@ async function renderDashboard(){
       <div class="card"><h4>Attendance (last 7 days)</h4><canvas id="c4" height="140"></canvas></div>
     </div>
     <div class="card" style="margin-top:16px">
-      <h4>Quick Actions — All Modules</h4>
+      <h4>Quick Actions - All Modules</h4>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn btn-sm" onclick="navigate('students')">+ Admit Student</button>
         <button class="btn btn-sm btn-outline" onclick="navigate('attendance')">Mark Attendance</button>
@@ -354,7 +354,7 @@ async function renderDashboard(){
     </div>`;
   }
   $('#content').innerHTML = html;
-  // Charts — only init those present
+  // Charts - only init those present
   setTimeout(()=>{
     if(document.getElementById('c1')) new Chart($('#c1'),{type:'bar',data:{labels:d.feesByMonth.map(x=>x.m), datasets:[{label:'UGX', data:d.feesByMonth.map(x=>x.total), backgroundColor:'#3b82f6'}]}, options:{plugins:{legend:{display:false}}}});
     if(document.getElementById('c2')) new Chart($('#c2'),{type:'doughnut',data:{labels:d.studentsByClass.map(x=>x.class), datasets:[{data:d.studentsByClass.map(x=>x.count), backgroundColor:['#1e40af','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6']}]}, options:{plugins:{legend:{position:'bottom'}}}});
@@ -374,7 +374,7 @@ async function renderStudents(){
     <button class="btn btn-sm btn-outline" onclick="exportStudentsCSV()">Export CSV</button>
   </div>
   <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th></th></tr></thead><tbody id="stuBody">${students.map(s=>`<tr data-q="${(s.first_name+' '+s.last_name+' '+s.admission_no+' '+s.class).toLowerCase()}"><td>${s.admission_no}</td><td><b>${s.first_name} ${s.last_name}</b><div class="muted" style="font-size:11px">${s.dob||''}</div></td><td><span class="badge badge-blue">${s.class||'-'}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="openStudentModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delStudent(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
-  <div class="muted" style="margin-top:8px">${students.length} students • Classes: ${classes.map(c=>c.name).join(', ')}</div>`;
+  <div class="muted" style="margin-top:8px">${students.length} students | Classes: ${classes.map(c=>c.name).join(', ')}</div>`;
 }
 function filterStudents(){ const q=$('#stuQ').value.toLowerCase(); document.querySelectorAll('#stuBody tr').forEach(tr=> tr.style.display = tr.dataset.q.includes(q)?'':'none'); }
 function openStudentModal(id){
@@ -444,7 +444,7 @@ async function renderClasses(){
   $('#content').innerHTML=`
   <div class="grid grid2">
     <div class="card"><h4>Classes</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Class</th><th>Capacity</th><th>Enrolled</th><th>Room</th></tr></thead><tbody>${classes.map(c=>`<tr><td><b>${c.name}</b></td><td>${c.capacity||40}</td><td>${byClass[c.name]||0}</td><td>${c.room||'-'}</td></tr>`).join('')}</tbody></table></div></div>
-    <div class="card"><h4>Promote Students</h4><div class="alert alert-info">Moves all students from one class to next (e.g., P5 → P6). Uses promotions log.</div>
+    <div class="card"><h4>Promote Students</h4><div class="alert alert-info">Moves all students from one class to next (e.g., P5 -> P6). Uses promotions log.</div>
       <div class="form-grid"><div><label>From Class</label><select id="p_from" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div><div><label>To Class</label><select id="p_to" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div><div><label>Year</label><input id="p_year" class="input" value="2026"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" onclick="doPromote()">Promote Now</button></div></div>
       <h4 style="margin-top:14px">Add New Class</h4><div style="display:flex;gap:8px;margin-top:8px"><input id="newClass" class="input" placeholder="e.g., P8"><button class="btn btn-sm" onclick="addClass()">Add</button></div>
     </div>
@@ -468,7 +468,7 @@ async function delExam(id){ if(!confirm('Delete exam & results?')) return; await
 async function openResultModal(examId, examName){
   const subjects=await apiGet('/api/subjects');
   const students=await apiGet('/api/students');
-  openModal(`<h3>Enter Results — ${examName}</h3><div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select><div class="muted" style="margin:8px 0">Enter marks (0-100) per student. Grade auto-calculated.</div><div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>Adm</th><th>Name</th><th>Class</th><th>Marks</th></tr></thead><tbody>${students.slice(0,30).map(s=>`<tr><td>${s.admission_no}</td><td>${s.first_name} ${s.last_name}</td><td>${s.class}</td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" style="padding:6px;width:80px"></td></tr>`).join('')}</tbody></table></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveResults(${examId})">Save Results</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  openModal(`<h3>Enter Results - ${examName}</h3><div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select><div class="muted" style="margin:8px 0">Enter marks (0-100) per student. Grade auto-calculated.</div><div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>Adm</th><th>Name</th><th>Class</th><th>Marks</th></tr></thead><tbody>${students.slice(0,30).map(s=>`<tr><td>${s.admission_no}</td><td>${s.first_name} ${s.last_name}</td><td>${s.class}</td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" style="padding:6px;width:80px"></td></tr>`).join('')}</tbody></table></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveResults(${examId})">Save Results</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
 }
 async function saveResults(examId){
   const subject=$('#r_sub').value;
@@ -482,17 +482,17 @@ async function viewResults(examId){
   $('#resView').innerHTML=`<div class="card"><h4>Results (${rows.length})</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.first_name} ${r.last_name}</td><td>${r.class}</td><td>${r.subject}</td><td>${r.marks}</td><td><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
-// REPORT CARDS — Premium + PDF
+// REPORT CARDS - Premium + PDF
 async function renderReportCards(){
   const students=await apiGet('/api/students');
   const exams=await apiGet('/api/exams');
   $('#content').innerHTML=`
   <div class="card">
-    <h4><i class="ri-article-line"></i> Premium Report Cards — Print & PDF</h4>
+    <h4><i class="ri-article-line"></i> Premium Report Cards - Print & PDF</h4>
     <p class="muted">Official term report with crest, watermark, grading scale and signatures. Generates high-res PDF.</p>
     <div class="form-grid" style="margin-top:12px">
-      <div><label>Student</label><select id="rc_stu" class="input">${students.map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class} (${s.admission_no})</option>`).join('')}</select></div>
-      <div><label>Exam / Term</label><select id="rc_exam" class="input">${exams.map(e=>`<option value="${e.id}">${e.name} • ${e.class} • ${e.term} ${e.year}</option>`).join('')}</select></div>
+      <div><label>Student</label><select id="rc_stu" class="input">${students.map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} - ${s.class} (${s.admission_no})</option>`).join('')}</select></div>
+      <div><label>Exam / Term</label><select id="rc_exam" class="input">${exams.map(e=>`<option value="${e.id}">${e.name} | ${e.class} | ${e.term} ${e.year}</option>`).join('')}</select></div>
       <div><label>Attendance (days)</label><input id="rc_att" class="input" value="78/90"></div>
       <div><label>Conduct</label><select id="rc_conduct" class="input"><option>Excellent</option><option>Very Good</option><option>Good</option><option>Fair</option></select></div>
       <div class="full"><label>Class Teacher Comment</label><input id="rc_comment" class="input" value="Hardworking and disciplined. Keep it up!"></div>
@@ -537,8 +537,8 @@ async function genReportCard(){
       <div class="rc-crest">EC</div>
       <div class="rc-title">
         <h2>EDUCONTROL ACADEMY</h2>
-        <p>P.O. Box 123, Kampala • Tel: 0772 000000 / 0700 000000 • Email: info@educontrol.ac.ug</p>
-        <p style="margin-top:4px; font-weight:700; letter-spacing:.14em; font-size:11px;">MOTTO: KNOWLEDGE IS POWER • LIGHT • SERVICE</p>
+        <p>P.O. Box 123, Kampala | Tel: 0772 000000 / 0700 000000 | Email: info@educontrol.ac.ug</p>
+        <p style="margin-top:4px; font-weight:700; letter-spacing:.14em; font-size:11px;">MOTTO: KNOWLEDGE IS POWER | LIGHT | SERVICE</p>
       </div>
       <div style="text-align:right; font-size:11px; line-height:1.4;">
         <div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px;"><b>TERM REPORT CARD</b><br>${examName}</div>
@@ -548,30 +548,30 @@ async function genReportCard(){
 
     <div class="rc-meta">
       <div><span class="muted">Pupil:</span><br><b>${stu.first_name} ${stu.last_name}</b></div>
-      <div><span class="muted">Admission No:</span><br><b>${stu.admission_no}</b> • <span class="muted">Gender:</span> <b>${stu.gender||'-'}</b></div>
-      <div><span class="muted">Class:</span><br><b>${stu.class}</b> • <span class="muted">Stream:</span> <b>${stu.stream||'A'}</b></div>
-      <div><span class="muted">Attendance:</span><br><b>${att}</b> • <span class="muted">Conduct:</span> <b>${conduct}</b></div>
+      <div><span class="muted">Admission No:</span><br><b>${stu.admission_no}</b> | <span class="muted">Gender:</span> <b>${stu.gender||'-'}</b></div>
+      <div><span class="muted">Class:</span><br><b>${stu.class}</b> | <span class="muted">Stream:</span> <b>${stu.stream||'A'}</b></div>
+      <div><span class="muted">Attendance:</span><br><b>${att}</b> | <span class="muted">Conduct:</span> <b>${conduct}</b></div>
     </div>
 
     <div style="padding:12px 16px 0; font-size:11px; color:#334155; display:flex; justify-content:space-between;">
       <span><b>Class Teacher:</b> ${document.querySelector('#userName')?document.querySelector('#userName').textContent:'Tr. Okello'}</span>
-      <span><b>Parent:</b> ${stu.parent_name||'-'} • ${stu.parent_phone||''}</span>
+      <span><b>Parent:</b> ${stu.parent_name||'-'} | ${stu.parent_phone||''}</span>
     </div>
 
     <div style="padding:12px 16px;">
       <table class="rc-table">
         <thead><tr><th style="width:28px">#</th><th>SUBJECT</th><th style="width:70px">MARKS</th><th style="width:60px">GRADE</th><th style="width:50px">POINT</th><th>REMARKS</th><th style="width:60px">INIT</th></tr></thead>
         <tbody>
-          ${results.length ? results.map((r,i)=>{ const sc=scoreGrade(r.marks); return `<tr><td>${i+1}</td><td><b>${r.subject}</b></td><td style="text-align:center"><b>${r.marks}</b></td><td style="text-align:center"><span class="badge ${Number(r.marks)>=50?'badge-green':'badge-red'}">${sc.g}</span></td><td style="text-align:center">${sc.p}</td><td>${sc.rem}</td><td style="text-align:center; color:#94a3b8;">—</td></tr>`}).join('') : `<tr><td colspan=7 style="text-align:center; padding:18px;" class="muted">No results for this exam yet. Enter results in <b>Exams & Results</b> first.</td></tr>`}
+          ${results.length ? results.map((r,i)=>{ const sc=scoreGrade(r.marks); return `<tr><td>${i+1}</td><td><b>${r.subject}</b></td><td style="text-align:center"><b>${r.marks}</b></td><td style="text-align:center"><span class="badge ${Number(r.marks)>=50?'badge-green':'badge-red'}">${sc.g}</span></td><td style="text-align:center">${sc.p}</td><td>${sc.rem}</td><td style="text-align:center; color:#94a3b8;">-</td></tr>`}).join('') : `<tr><td colspan=7 style="text-align:center; padding:18px;" class="muted">No results for this exam yet. Enter results in <b>Exams & Results</b> first.</td></tr>`}
         </tbody>
-        ${results.length ? `<tfoot><tr style="background:#f8fafc; font-weight:700;"><td colspan=2 style="text-align:right">TOTAL</td><td style="text-align:center">${sum}</td><td colspan=2 style="text-align:center">AGG: ${agg}</td><td colspan=2>AVG: ${avg}% • ${div}</td></tr></tfoot>` : ``}
+        ${results.length ? `<tfoot><tr style="background:#f8fafc; font-weight:700;"><td colspan=2 style="text-align:right">TOTAL</td><td style="text-align:center">${sum}</td><td colspan=2 style="text-align:center">AGG: ${agg}</td><td colspan=2>AVG: ${avg}% | ${div}</td></tr></tfoot>` : ``}
       </table>
     </div>
 
     <div class="rc-summary">
       <div class="rc-kpi"><div class="muted">Average</div><div class="v">${avg}%</div><div class="muted" style="font-size:10px;">${div}</div></div>
-      <div class="rc-kpi"><div class="muted">Aggregate</div><div class="v">${results.length?agg:'—'}</div><div class="muted" style="font-size:10px;">Best 8</div></div>
-      <div class="rc-kpi"><div class="muted">Position</div><div class="v">${pos||'—'} / ${totals.length||'—'}</div><div class="muted" style="font-size:10px;">Out of ${totals.length}</div></div>
+      <div class="rc-kpi"><div class="muted">Aggregate</div><div class="v">${results.length?agg:'-'}</div><div class="muted" style="font-size:10px;">Best 8</div></div>
+      <div class="rc-kpi"><div class="muted">Position</div><div class="v">${pos||'-'} / ${totals.length||'-'}</div><div class="muted" style="font-size:10px;">Out of ${totals.length}</div></div>
       <div class="rc-kpi"><div class="muted">Division</div><div class="v">${div}</div><div class="muted" style="font-size:10px;">${Number(avg)>=50?'Promoted':'Advise'}</div></div>
     </div>
 
@@ -579,17 +579,17 @@ async function genReportCard(){
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px;">
         <div style="font-size:11px; font-weight:700; color:#0f172a;">Class Teacher's Comment</div>
         <div style="font-size:12px; margin-top:4px; color:#334155; font-style:italic;">“${comment}”</div>
-        <div style="margin-top:8px; display:flex; gap:8px; font-size:11px;"><span>Conduct: <b>${conduct}</b></span> • <span>Attendance: <b>${att}</b></span></div>
+        <div style="margin-top:8px; display:flex; gap:8px; font-size:11px;"><span>Conduct: <b>${conduct}</b></span> | <span>Attendance: <b>${att}</b></span></div>
       </div>
       <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:10px; font-size:11px;">
         <div style="font-weight:700;">Next Term</div>
-        <div class="muted">Begins: <b style="color:#0f172a">${nextTerm}</b> • Fees: <b style="color:#0f172a">${stu.class && stu.class.startsWith('P') ? 'UGX 550,000' : 'UGX 850,000'}</b></div>
+        <div class="muted">Begins: <b style="color:#0f172a">${nextTerm}</b> | Fees: <b style="color:#0f172a">${stu.class && stu.class.startsWith('P') ? 'UGX 550,000' : 'UGX 850,000'}</b></div>
         <div class="muted" style="margin-top:6px;">Requirements: Uniform, books, fees clearance.</div>
       </div>
     </div>
 
     <div class="rc-scale">
-      <b>Grading Scale:</b> D1 80-100 (1) • D2 70-79 (2) • C3 60-69 (3) • C4 50-59 (4) • C5 40-49 (5) • C6 35-39 (6) • P7 28-34 (7) • P8 20-27 (8) • F9 0-19 (9) &nbsp; | &nbsp; <b>Divisions:</b> Div I 80%+, Div II 60%+, Div III 50%+, Div IV 40%+
+      <b>Grading Scale:</b> D1 80-100 (1) | D2 70-79 (2) | C3 60-69 (3) | C4 50-59 (4) | C5 40-49 (5) | C6 35-39 (6) | P7 28-34 (7) | P8 20-27 (8) | F9 0-19 (9) &nbsp; | &nbsp; <b>Divisions:</b> Div I 80%+, Div II 60%+, Div III 50%+, Div IV 40%+
     </div>
 
     <div class="rc-sign">
@@ -597,7 +597,7 @@ async function genReportCard(){
       <div style="text-align:center"><div style="width:160px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Sign & Stamp</span></div></div>
       <div style="text-align:center"><div style="width:160px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Parent / Guardian</b><br><span class="muted">Sign</span></div></div>
     </div>
-    <div style="text-align:center; font-size:10px; color:#0f172a; font-weight:600; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">This report is computer generated • EduControl School System • ${todayStr} • Document ID: ${stu.admission_no}-${examName.replace(/[^A-Z0-9]/gi,'').slice(0,8).toUpperCase()}</div>
+    <div style="text-align:center; font-size:10px; color:#0f172a; font-weight:600; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">This report is computer generated | EduControl School System | ${todayStr} | Document ID: ${stu.admission_no}-${examName.replace(/[^A-Z0-9]/gi,'').slice(0,8).toUpperCase()}</div>
   </div></div>
   <div class="no-print" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
     <button class="btn btn-sm" onclick="downloadReportPDF()"><i class="ri-download-line"></i> Download PDF</button>
@@ -607,7 +607,7 @@ async function genReportCard(){
 }
 async function downloadReportPDF(){
   const el = document.getElementById('printCard');
-  if(!el) return alert('Generate preview first — click Generate Preview');
+  if(!el) return alert('Generate preview first - click Generate Preview');
   const btn = document.querySelector('button[onclick="downloadReportPDF()"]');
   const old = btn ? btn.innerHTML : '';
   if(btn) btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…';
@@ -630,7 +630,7 @@ async function downloadReportPDF(){
     const margin = 5;
     const imgW = pageW - margin*2;
     const imgH = canvas.height * imgW / canvas.width;
-    // Single A4 page — most reports fit 1 page; if taller, split
+    // Single A4 page - most reports fit 1 page; if taller, split
     if(imgH <= pageH - margin*2){
       pdf.addImage(imgData, 'PNG', margin, margin, imgW, imgH, undefined, 'FAST');
     } else {
@@ -642,8 +642,8 @@ async function downloadReportPDF(){
         else break;
       }
     }
-    const stuName = document.querySelector('#rc_stu option:checked') ? document.querySelector('#rc_stu option:checked').textContent.split('—')[0].trim().replace(/[^A-Za-z0-9]/g,'_') : 'Report';
-    const examName = document.querySelector('#rc_exam option:checked') ? document.querySelector('#rc_exam option:checked').textContent.split('•')[0].trim().replace(/[^A-Za-z0-9]/g,'_') : 'Term';
+    const stuName = document.querySelector('#rc_stu option:checked') ? document.querySelector('#rc_stu option:checked').textContent.split('-')[0].trim().replace(/[^A-Za-z0-9]/g,'_') : 'Report';
+    const examName = document.querySelector('#rc_exam option:checked') ? document.querySelector('#rc_exam option:checked').textContent.split('|')[0].trim().replace(/[^A-Za-z0-9]/g,'_') : 'Term';
     pdf.save(stuName + '_' + examName + '_A4.pdf');
   } catch(e){ alert('PDF error: '+e.message); }
   finally{ if(btn) btn.innerHTML = old; }
@@ -666,7 +666,7 @@ async function downloadAllPDFs(){
 function renderAITutor(){
   $('#content').innerHTML=`
   <div class="grid grid2">
-    <div class="card"><h4><i class="ri-robot-line"></i> AI Tutor — Personalized Learning</h4><p class="muted" style="margin:8px 0">Ask anything: Math, Science, English, revision plans. Auto-personalized from student's performance.</p>
+    <div class="card"><h4><i class="ri-robot-line"></i> AI Tutor - Personalized Learning</h4><p class="muted" style="margin:8px 0">Ask anything: Math, Science, English, revision plans. Auto-personalized from student's performance.</p>
       <label>Student (optional for personalization)</label><select id="ai_stu" class="input"><option value="">-- General --</option></select>
       <textarea id="ai_q" class="input" rows="3" placeholder="e.g., Explain photosynthesis for P6, Help me with fractions, Make a study timetable for PLE" style="margin-top:8px"></textarea>
       <button class="btn btn-sm" style="margin-top:10px" onclick="askAI()">Ask AI Tutor</button>
@@ -689,7 +689,7 @@ async function loadPerf(){
   // avg by subject
   const bySub={}; rows.forEach(r=>{ if(!bySub[r.subject]) bySub[r.subject]={sum:0,n:0}; bySub[r.subject].sum+=r.marks; bySub[r.subject].n++; });
   const labels=Object.keys(bySub), data=labels.map(k=> (bySub[k].sum/bySub[k].n).toFixed(1));
-  $('#perfOut').innerHTML= labels.length? labels.map((k,i)=> `${k}: <b>${data[i]}%</b>`).join(' • ') : 'No results yet. Enter exams & results first.';
+  $('#perfOut').innerHTML= labels.length? labels.map((k,i)=> `${k}: <b>${data[i]}%</b>`).join(' | ') : 'No results yet. Enter exams & results first.';
   if(labels.length) new Chart($('#perfChart'),{type:'bar', data:{labels, datasets:[{label:'Avg %', data, backgroundColor:'#10b981'}]}, options:{plugins:{legend:{display:false}}}});
 }
 
@@ -698,7 +698,7 @@ async function renderStaff(){
   const staff=await apiGet('/api/staff');
   $('#content').innerHTML=`
   <div class="toolbar"><button class="btn btn-sm" onclick="openStaffModal()"><i class="ri-add-line"></i> Add Staff</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Staff No</th><th>Name</th><th>Dept</th><th>Role</th><th>Salary</th><th>Status</th><th></th></tr></thead><tbody>${staff.map(s=>`<tr><td>${s.staff_no}</td><td><b>${s.name}</b><div class="muted" style="font-size:11px">${s.email||''} • ${s.phone||''}</div></td><td>${s.department||''}</td><td>${s.role||''}</td><td>${fmtMoney(s.salary)}</td><td><span class="badge badge-green">${s.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="openStaffModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delStaff(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>`;
+  <div class="table-wrap"><table><thead><tr><th>Staff No</th><th>Name</th><th>Dept</th><th>Role</th><th>Salary</th><th>Status</th><th></th></tr></thead><tbody>${staff.map(s=>`<tr><td>${s.staff_no}</td><td><b>${s.name}</b><div class="muted" style="font-size:11px">${s.email||''} | ${s.phone||''}</div></td><td>${s.department||''}</td><td>${s.role||''}</td><td>${fmtMoney(s.salary)}</td><td><span class="badge badge-green">${s.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="openStaffModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delStaff(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>`;
 }
 function openStaffModal(id){
   const load=id? apiGet('/api/staff/'+id) : Promise.resolve({});
@@ -729,7 +729,7 @@ async function renderPayroll(){
 }
 async function genPayroll(){ const month=$('#payMonth').value; if(!month) return alert('Select month'); await apiPost('/api/payroll/generate',{month}); renderPayroll(); }
 
-// FEES — with Receipt PDF
+// FEES - with Receipt PDF
 async function renderFees(){
   const fees=await apiGet('/api/fees-structure');
   const pays=await apiGet('/api/payments');
@@ -755,7 +755,7 @@ function renderFeesStructure(){
 function openFeesModal(){ openModal(`<h3>Add Fees Structure</h3><div class="form-grid" style="margin-top:12px"><div><label>Class</label><input id="fs_class" class="input" placeholder="P1"></div><div><label>Term</label><input id="fs_term" class="input" value="Term I"></div><div><label>Amount</label><input id="fs_amt" type="number" class="input"></div><div><label>Due Date</label><input id="fs_due" type="date" class="input"></div><div class="full"><label>Description</label><input id="fs_desc" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveFeesS()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
 async function saveFeesS(){ await apiPost('/api/fees-structure',{class:$('#fs_class').value, term:$('#fs_term').value, amount:parseFloat($('#fs_amt').value)||0, due_date:$('#fs_due').value, description:$('#fs_desc').value}); closeModal(); renderFeesStructure(); }
 function openPayModal(){
-  const opts=(window._studentsForPay||[]).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class} (${s.admission_no})</option>`).join('');
+  const opts=(window._studentsForPay||[]).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} - ${s.class} (${s.admission_no})</option>`).join('');
   openModal(`<h3>Record Payment</h3><div class="form-grid" style="margin-top:12px"><div class="full"><label>Student*</label><select id="pay_stu" class="input">${opts}</select></div><div><label>Amount*</label><input id="pay_amt" type="number" class="input"></div><div><label>Method</label><select id="pay_met" class="input"><option>Cash</option><option>Bank</option><option>Mobile Money</option></select></div><div><label>Term</label><input id="pay_term" class="input" value="Term I"></div><div><label>Date</label><input id="pay_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="savePay()">Save & Print Receipt</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
 }
 async function savePay(){ const body={student_id:parseInt($('#pay_stu').value), amount:parseFloat($('#pay_amt').value), method:$('#pay_met').value, term:$('#pay_term').value, date:$('#pay_date').value, receipt_no:'REC'+Date.now().toString().slice(-7)}; if(!body.amount) return alert('Amount required'); const res=await apiPost('/api/payments',body); closeModal(); await renderFees(); setTimeout(()=> previewReceipt(res.id), 400); }
@@ -765,31 +765,31 @@ function receiptHTML(p, stu){
   const amtWords = fmtMoney(p.amount) + ' Only';
   return `
   <div id="receiptPrint" class="rc-paper" style="width:210mm; min-height:148mm; max-height:148mm; border:1.5px dashed #0f172a; position:relative;">
-    <div style="position:absolute; top:8px; right:12px; font-size:9px; color:#94a3b8; border:1px solid #e2e8f0; padding:2px 6px; border-radius:999px;">Original • ${p.receipt_no}</div>
+    <div style="position:absolute; top:8px; right:12px; font-size:9px; color:#94a3b8; border:1px solid #e2e8f0; padding:2px 6px; border-radius:999px;">Original | ${p.receipt_no}</div>
     <div class="rc-head" style="padding:14px 16px;">
       <div class="rc-crest" style="width:48px; height:48px; font-size:20px;">EC</div>
-      <div class="rc-title"><h2 style="font-size:17px;">EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala • 0772 000000 • info@educontrol.ac.ug</p><p style="font-weight:700; letter-spacing:.14em; font-size:10px;">OFFICIAL PAYMENT RECEIPT</p></div>
+      <div class="rc-title"><h2 style="font-size:17px;">EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala | 0772 000000 | info@educontrol.ac.ug</p><p style="font-weight:700; letter-spacing:.14em; font-size:10px;">OFFICIAL PAYMENT RECEIPT</p></div>
       <div style="text-align:right; font-size:10px; background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px;"><b>No:</b> ${p.receipt_no}<br>Date: ${dateStr}<br>Term: ${p.term||'-'}</div>
     </div>
     <div style="padding:12px 16px; font-size:11px; display:grid; grid-template-columns:1fr 1fr; gap:10px; background:#f8fafc; border-bottom:1.2px solid #0f172a;">
-      <div>Received from: <b>${stu.first_name} ${stu.last_name}</b> <span class="muted">(${stu.admission_no} • ${stu.class})</span><br>Parent: <b>${stu.parent_name||'-'}</b> • ${stu.parent_phone||''}</div>
-      <div style="text-align:right;">Amount: <b style="font-size:15px; color:#1e40af;">${fmtMoney(p.amount)}</b><br>Method: <b>${p.method}</b> • Balance: <span class="muted">—</span></div>
+      <div>Received from: <b>${stu.first_name} ${stu.last_name}</b> <span class="muted">(${stu.admission_no} | ${stu.class})</span><br>Parent: <b>${stu.parent_name||'-'}</b> | ${stu.parent_phone||''}</div>
+      <div style="text-align:right;">Amount: <b style="font-size:15px; color:#1e40af;">${fmtMoney(p.amount)}</b><br>Method: <b>${p.method}</b> | Balance: <span class="muted">-</span></div>
     </div>
     <div style="padding:12px 16px;">
       <table class="rc-table">
         <thead><tr><th>DESCRIPTION</th><th style="width:35%; text-align:right;">AMOUNT (UGX)</th></tr></thead>
         <tbody>
-          <tr><td>School Fees — ${p.term||'Term I'} <span class="muted">(${stu.class})</span></td><td style="text-align:right; font-weight:700;">${fmtMoney(p.amount)}</td></tr>
+          <tr><td>School Fees - ${p.term||'Term I'} <span class="muted">(${stu.class})</span></td><td style="text-align:right; font-weight:700;">${fmtMoney(p.amount)}</td></tr>
           <tr style="background:#0f172a; color:#fff;"><td><b>TOTAL PAID</b></td><td style="text-align:right;"><b>${fmtMoney(p.amount)}</b></td></tr>
         </tbody>
       </table>
       <div style="margin-top:8px; font-size:11px; color:#334155;">Amount in words: <b><i>${amtWords}</i></b></div>
-      <div style="margin-top:10px; display:flex; justify-content:space-between; font-size:10px; color:#64748b;"><span>Received by: <b style="color:#0f172a;">${user.name}</b> • ${user.role}</span><span>Thank you for your payment!</span></div>
+      <div style="margin-top:10px; display:flex; justify-content:space-between; font-size:10px; color:#64748b;"><span>Received by: <b style="color:#0f172a;">${user.name}</b> | ${user.role}</span><span>Thank you for your payment!</span></div>
     </div>
     <div style="display:flex; justify-content:space-between; padding:10px 16px; font-size:10px; border-top:1.2px dashed #0f172a; background:#f8fafc;">
       <div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 3px;"></div><b>Bursar</b><br><span class="muted">Sign & Stamp</span></div>
       <div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 3px;"></div><b>Parent / Guardian</b><br><span class="muted">Sign</span></div>
-      <div style="font-size:9px; color:#94a3b8; text-align:right;">${p.receipt_no} • ${dateStr} • EduControl<br>Valid only with stamp</div>
+      <div style="font-size:9px; color:#94a3b8; text-align:right;">${p.receipt_no} | ${dateStr} | EduControl<br>Valid only with stamp</div>
     </div>
   </div>`;
 }
@@ -821,7 +821,7 @@ async function downloadReceipt(id){
     const pageW=210, pageH=297, margin=8;
     const imgW=pageW - margin*2;
     const imgH=canvas.height * imgW / canvas.width;
-    // Receipt is half-A4 (148mm) — center vertically
+    // Receipt is half-A4 (148mm) - center vertically
     const y = (pageH - imgH)/2;
     pdf.addImage(imgData,'PNG',margin, Math.max(10,y), imgW, Math.min(imgH, 140), undefined,'FAST');
     pdf.save(`${p.receipt_no}_${stu.first_name}_${stu.last_name}_Receipt.pdf`);
@@ -834,9 +834,9 @@ async function downloadFeesPDF(){
   const total = pays.reduce((a,b)=>a+Number(b.amount||0),0);
   const html = `
   <div id="feesPrint" class="rc-paper">
-    <div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Fees Collection Report • ${today()}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>Total:</b> ${fmtMoney(total)}<br>${pays.length} payments</div></div>
+    <div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Fees Collection Report | ${today()}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>Total:</b> ${fmtMoney(total)}<br>${pays.length} payments</div></div>
     <div style="padding:12px 16px;"><table class="rc-table"><thead><tr><th>Receipt</th><th>Student</th><th>Amount</th><th>Method</th><th>Term</th><th>Date</th></tr></thead><tbody>${pays.slice(0,40).map(p=>`<tr><td>${p.receipt_no}</td><td>${map[p.student_id]||p.student_id}</td><td>${fmtMoney(p.amount)}</td><td>${p.method}</td><td>${p.term}</td><td>${p.date}</td></tr>`).join('')}</tbody><tfoot><tr style="background:#0f172a; color:#fff;"><td colspan=2><b>TOTAL</b></td><td><b>${fmtMoney(total)}</b></td><td colspan=3></td></tr></tfoot></table></div>
-    <div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Finance • ${new Date().toLocaleDateString('en-GB')}</div>
+    <div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Finance | ${new Date().toLocaleDateString('en-GB')}</div>
   </div>`;
   const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=html; document.body.appendChild(wrap);
   const el=wrap.querySelector('#feesPrint');
@@ -869,8 +869,8 @@ async function saveInc(){ await apiPost('/api/incomes',{source:$('#in_src').valu
 // REPORTS
 async function renderReports(){
   $('#content').innerHTML=`
-  <div class="card"><h4><i class="ri-file-paper-2-line"></i> Financial Reports — A4 PDF Ready</h4>
-    <p class="muted">Income Statement & Balance Sheet — generate A4 premium report with school header, period, and signatures. Export as PDF.</p>
+  <div class="card"><h4><i class="ri-file-paper-2-line"></i> Financial Reports - A4 PDF Ready</h4>
+    <p class="muted">Income Statement & Balance Sheet - generate A4 premium report with school header, period, and signatures. Export as PDF.</p>
     <div class="form-grid" style="margin-top:12px"><div><label>From</label><input id="r_from" type="date" class="input" value="2026-01-01"></div><div><label>To</label><input id="r_to" type="date" class="input" value="${today()}"></div><div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;"><button class="btn btn-sm" onclick="loadReports()"><i class="ri-refresh-line"></i> Generate</button><button class="btn btn-sm btn-outline" onclick="downloadFinancePDF()"><i class="ri-download-line"></i> Download PDF (A4)</button><button class="btn btn-sm btn-outline" onclick="window.print()"><i class="ri-printer-line"></i> Print</button></div></div>
     <div id="repOut" style="margin-top:16px"></div>
   </div>`;
@@ -878,7 +878,7 @@ async function renderReports(){
 }
 async function loadReports(){
   const from=$('#r_from')?.value, to=$('#r_to')?.value;
-  const period = (from && to) ? `${from} → ${to}` : 'All Time';
+  const period = (from && to) ? `${from} -> ${to}` : 'All Time';
   const todayStr = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
   const inc=from? await apiGet(`/api/reports/income-statement?from=${from}&to=${to}`): await apiGet('/api/reports/income-statement');
   const bal=await apiGet('/api/reports/balance-sheet');
@@ -887,21 +887,21 @@ async function loadReports(){
   <div id="financePrint" class="rc-paper" style="padding:0;">
     <div class="rc-head">
       <div class="rc-crest">EC</div>
-      <div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala • Tel: 0772 000000 • info@educontrol.ac.ug</p><p style="margin-top:4px; font-weight:700; letter-spacing:.14em; font-size:11px;">FINANCIAL REPORTS • AUDIT READY</p></div>
+      <div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala | Tel: 0772 000000 | info@educontrol.ac.ug</p><p style="margin-top:4px; font-weight:700; letter-spacing:.14em; font-size:11px;">FINANCIAL REPORTS | AUDIT READY</p></div>
       <div style="text-align:right; font-size:11px; line-height:1.4;"><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px;"><b>PERIOD</b><br>${period}</div><div style="margin-top:6px;">Date: ${todayStr}</div></div>
     </div>
     <div style="padding:12px 16px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; background:#f8fafc; border-bottom:1.2px solid #0f172a; font-size:11px;">
-      <div>Prepared by: <b>${user.name}</b> <span class="badge badge-blue">${user.role}</span></div><div>Currency: <b>UGX</b> • All amounts</div><div style="text-align:right;">Report ID: <b>FIN-${Date.now().toString().slice(-8)}</b></div>
+      <div>Prepared by: <b>${user.name}</b> <span class="badge badge-blue">${user.role}</span></div><div>Currency: <b>UGX</b> | All amounts</div><div style="text-align:right;">Report ID: <b>FIN-${Date.now().toString().slice(-8)}</b></div>
     </div>
     <div style="padding:14px 16px;">
       <h4 style="font-size:13px; font-weight:800; color:#0f172a; border-left:4px solid #1e40af; padding-left:8px;">Income Statement</h4>
-      <p class="muted" style="font-size:11px; margin:4px 0 8px;">Period: ${period} • Generated ${todayStr}</p>
+      <p class="muted" style="font-size:11px; margin:4px 0 8px;">Period: ${period} | Generated ${todayStr}</p>
       <table class="rc-table">
         <thead><tr><th>DESCRIPTION</th><th style="width:38%; text-align:right;">AMOUNT (UGX)</th></tr></thead>
         <tbody>
           <tr><td>Total Income <span class="muted">(Fees + Other Income)</span></td><td style="text-align:right; font-weight:700;">${fmtMoney(inc.income)}</td></tr>
           <tr><td>Total Expenses</td><td style="text-align:right; font-weight:700; color:var(--danger);">${fmtMoney(inc.expense)}</td></tr>
-          <tr style="background:#0f172a; color:#fff;"><td><b>NET INCOME</b></td><td style="text-align:right;"><b style="color:${inc.gross>=0?'#86efac':'#fecaca'}">${fmtMoney(inc.gross)}</b> ${inc.gross>=0?'▲ Profit':'▼ Loss'}</td></tr>
+          <tr style="background:#0f172a; color:#fff;"><td><b>NET INCOME</b></td><td style="text-align:right;"><b style="color:${inc.gross>=0?'#86efac':'#fecaca'}">${fmtMoney(inc.gross)}</b> ${inc.gross>=0?'^ Profit':'v Loss'}</td></tr>
         </tbody>
       </table>
       <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px;">
@@ -921,22 +921,22 @@ async function loadReports(){
         </tbody>
       </table>
       <div style="margin-top:10px; display:grid; grid-template-columns:repeat(2,1fr); gap:8px; font-size:11px;">
-        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px;"><b>Fees Trend</b><br><span class="muted">${dashboard.feesByMonth.map(m=>m.m+': '+fmtMoney(m.total)).join(' • ') || 'No data'}</span></div>
-        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px;"><b>Expenses by Category</b><br><span class="muted">${dashboard.expensesByCat.map(e=>e.category+': '+fmtMoney(e.total)).join(' • ') || 'No data'}</span></div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px;"><b>Fees Trend</b><br><span class="muted">${dashboard.feesByMonth.map(m=>m.m+': '+fmtMoney(m.total)).join(' | ') || 'No data'}</span></div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px;"><b>Expenses by Category</b><br><span class="muted">${dashboard.expensesByCat.map(e=>e.category+': '+fmtMoney(e.total)).join(' | ') || 'No data'}</span></div>
       </div>
     </div>
-    <div class="rc-scale" style="background:#f8fafc; border-top:1.2px dashed #0f172a;">This is a computer-generated financial statement. Figures extracted from <b>Payments + Incomes – Expenses</b>. Verify with source receipts. • EduControl Finance Module</div>
+    <div class="rc-scale" style="background:#f8fafc; border-top:1.2px dashed #0f172a;">This is a computer-generated financial statement. Figures extracted from <b>Payments + Incomes – Expenses</b>. Verify with source receipts. | EduControl Finance Module</div>
     <div class="rc-sign">
       <div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Bursar</b><br><span class="muted">Sign & Stamp</span></div></div>
       <div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Approve</span></div></div>
       <div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Auditor</b><br><span class="muted">Sign</span></div></div>
     </div>
-    <div style="text-align:center; font-size:9px; color:#0f172a; font-weight:600; padding:7px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl School System • Financial Reports • ${todayStr} • Period: ${period}</div>
+    <div style="text-align:center; font-size:9px; color:#0f172a; font-weight:600; padding:7px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl School System | Financial Reports | ${todayStr} | Period: ${period}</div>
   </div>
   <div class="no-print" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
     <button class="btn btn-sm" onclick="downloadFinancePDF()"><i class="ri-download-line"></i> Download PDF (A4)</button>
     <button class="btn btn-sm btn-outline" onclick="window.print()"><i class="ri-printer-line"></i> Print</button>
-    <span class="muted" style="align-self:center; font-size:11px;">A4 • Audit-ready • Includes Income Statement + Balance Sheet</span>
+    <span class="muted" style="align-self:center; font-size:11px;">A4 | Audit-ready | Includes Income Statement + Balance Sheet</span>
   </div>`;
 }
 async function downloadFinancePDF(){
@@ -1007,7 +1007,7 @@ async function renderSickbay(){
 }
 function openMedModal(){
   apiGet('/api/students').then(students=>{
-    const opts=students.slice(0,40).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class}</option>`).join('');
+    const opts=students.slice(0,40).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} - ${s.class}</option>`).join('');
     openModal(`<h3>New Sickbay Visit</h3><div class="form-grid" style="margin-top:12px"><div class="full"><label>Student*</label><select id="med_stu" class="input">${opts}</select></div><div><label>Date</label><input id="med_date" type="date" class="input" value="${today()}"></div><div><label>Nurse</label><input id="med_nurse" class="input" value="Nurse"></div><div class="full"><label>Symptoms</label><input id="med_sym" class="input"></div><div class="full"><label>Diagnosis / Treatment</label><input id="med_treat" class="input"></div><div class="full"><label>Prescribed</label><input id="med_pres" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveMed()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
   });
 }
@@ -1034,8 +1034,8 @@ function openRouteModal(){ openModal(`<h3>Add Route</h3><div class="form-grid" s
 async function saveRoute(){ await apiPost('/api/routes',{name:$('#rt_name').value, stops:$('#rt_stops').value, fee:parseFloat($('#rt_fee').value)||0}); closeModal(); renderTransport(); }
 function openTransRegModal(){
   Promise.all([apiGet('/api/students'), apiGet('/api/routes')]).then(([students,routes])=>{
-    const so=students.slice(0,40).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class}</option>`).join('');
-    const ro=routes.map(r=>`<option value="${r.id}">${r.name} — ${fmtMoney(r.fee)}</option>`).join('');
+    const so=students.slice(0,40).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} - ${s.class}</option>`).join('');
+    const ro=routes.map(r=>`<option value="${r.id}">${r.name} - ${fmtMoney(r.fee)}</option>`).join('');
     openModal(`<h3>Register Student for Transport</h3><div class="form-grid" style="margin-top:12px"><div><label>Student</label><select id="tr_stu" class="input">${so}</select></div><div><label>Route</label><select id="tr_route" class="input">${ro}</select></div><div class="full"><label>Pickup Point</label><input id="tr_pick" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveTransReg()">Register</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
   });
 }
@@ -1067,7 +1067,7 @@ async function renderSMS(){
     <div class="card"><h4>SMS Logs</h4><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Date</th><th>To</th><th>Type</th><th>Message</th></tr></thead><tbody>${logs.slice(0,20).map(l=>`<tr><td>${(l.date||'').slice(0,16)}</td><td>${l.recipient} (${l.phone})</td><td>${l.type||''}</td><td>${(l.message||'').slice(0,60)}</td></tr>`).join('')}</tbody></table></div></div>
   </div>`;
 }
-function fillTemplate(t){ if(t==='fees') $('#sms_msg').value='Dear Parent, this is a reminder that school fees for Term I is due. Balance: UGX 150,000. Please pay via bank/MoMo. Thank you — EduControl Academy.'; }
+function fillTemplate(t){ if(t==='fees') $('#sms_msg').value='Dear Parent, this is a reminder that school fees for Term I is due. Balance: UGX 150,000. Please pay via bank/MoMo. Thank you - EduControl Academy.'; }
 async function loadSmsRecipients(){
   const g=$('#sms_group').value;
   if(g==='class'){ const classes=await apiGet('/api/classes'); $('#smsExtra').innerHTML=`<label>Class</label><select id="sms_class" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select>`; }
@@ -1083,7 +1083,7 @@ async function sendSMS(){
   else { const studs=await apiGet('/api/students'); recipients=studs.slice(0,30).map(s=> ({phone:s.parent_phone, name:s.parent_name||s.first_name})).filter(r=> r.phone); }
   if(recipients.length===0) return alert('No recipients with phone numbers');
   const r=await apiPost('/api/sms/send',{recipients, message:msg, type:g});
-  $('#smsRes').innerHTML=`<div class="alert alert-info">Queued ${r.sent} SMS — ${r.note}</div>`; setTimeout(renderSMS,1200);
+  $('#smsRes').innerHTML=`<div class="alert alert-info">Queued ${r.sent} SMS - ${r.note}</div>`; setTimeout(renderSMS,1200);
 }
 
 // BACKUP
@@ -1094,10 +1094,10 @@ function renderBackup(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-sm" onclick="backupDB()"><i class="ri-download-line"></i> Download Backup (.db)</button><button class="btn btn-sm btn-outline" onclick="alert('To restore: upload your .db to data/school.db on server and restart. For Render, use SFTP or redeploy with file.')">Restore Data</button><button class="btn btn-sm btn-outline" onclick="navigate('roles')"><i class="ri-shield-user-line"></i> View Roles</button></div>
       <div class="alert alert-info" style="margin-top:12px"><b>Role-Based Access:</b> 5 roles enforced on frontend + backend (403 if forbidden). See <b>Roles & Permissions</b> page for full matrix.</div>
       <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>headteacher</option><option>teacher</option><option>bursar</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
-      <div class="alert" style="margin-top:10px; background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>Permanent Backup Link:</b><br><code style="font-size:10px; word-break:break-all;">${location.origin}/api/backup?key=educontrol-permanent-2026</code><br><span style="font-size:11px;">Never expires — bookmark for automated backups.</span></div>
+      <div class="alert" style="margin-top:10px; background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>Permanent Backup Link:</b><br><code style="font-size:10px; word-break:break-all;">${location.origin}/api/backup?key=educontrol-permanent-2026</code><br><span style="font-size:11px;">Never expires - bookmark for automated backups.</span></div>
     </div>
     <div class="card"><h4>Secure User Accounts</h4><div id="userList" class="muted">Loading...</div>
-      <h4 style="margin-top:14px">Protect Important Records</h4><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--muted)"><li>Daily auto-backup recommended (cron on Render)</li><li>Enable Render Disk for <code>/data</code> persistence</li><li>JWT 10y + permanent ?key — bcrypt passwords</li><li>All deletes require confirmation • 403 on forbidden role</li></ul>
+      <h4 style="margin-top:14px">Protect Important Records</h4><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--muted)"><li>Daily auto-backup recommended (cron on Render)</li><li>Enable Render Disk for <code>/data</code> persistence</li><li>JWT 10y + permanent ?key - bcrypt passwords</li><li>All deletes require confirmation | 403 on forbidden role</li></ul>
     </div>
   </div>`;
   apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; }).catch(()=>{ $('#userList').innerHTML=`<div class="alert alert-info">Only admin/headteacher can view users. Your role <b>${user.role}</b> cannot access this.</div>`; });
@@ -1126,7 +1126,7 @@ function renderRoles(){
   ];
   $('#content').innerHTML=`
   <div class="card">
-    <h4><i class="ri-shield-user-line"></i> Roles & Permissions — Who Can Access What</h4>
+    <h4><i class="ri-shield-user-line"></i> Roles & Permissions - Who Can Access What</h4>
     <p class="muted" style="margin-top:6px;">Enforced on both frontend (nav hidden) and backend (403 Forbidden). Your current role: <span class="badge badge-blue">${user.role}</span></p>
     <div class="table-wrap" style="margin-top:12px;">
       <table><thead><tr><th>Feature</th><th>Admin</th><th>Head Teacher</th><th>Teacher</th><th>Bursar</th><th>Nurse</th></tr></thead>
@@ -1141,7 +1141,7 @@ function renderRoles(){
       <div class="card" style="background:#fef2f2; border-color:#fecaca;"><b>Bursar</b><div class="muted" style="margin-top:4px; font-size:12px;">Finance officer. Fees, payments, expenses, payroll, procurement, inventory, financial reports. No academic edit, no sickbay. <br><b>Demo:</b> bursar / bursar123</div></div>
       <div class="card" style="background:#fdf2f8; border-color:#fbcfe8;"><b>Nurse</b><div class="muted" style="margin-top:4px; font-size:12px;">Medical. Sickbay visits, medicines, student medical records (view students). No finance, no exams. <br><b>Demo:</b> nurse / nurse123</div></div>
     </div>
-    <div class="alert alert-info" style="margin-top:14px;"><b>Security:</b> All APIs check <code>role</code> from JWT via <code>authorize('perm')</code> in <code>server/index.js:1</code>. Forbidden → <code>403 Forbidden — bursar cannot access exams</code>. Frontend hides nav items via <code>canAccess()</code> — but backend is the source of truth.</div>
+    <div class="alert alert-info" style="margin-top:14px;"><b>Security:</b> All APIs check <code>role</code> from JWT via <code>authorize('perm')</code> in <code>server/index.js:1</code>. Forbidden -> <code>403 Forbidden - bursar cannot access exams</code>. Frontend hides nav items via <code>canAccess()</code> - but backend is the source of truth.</div>
     <div style="display:flex; gap:8px; margin-top:10px;"><button class="btn btn-sm" onclick="navigate('backup')"><i class="ri-user-add-line"></i> Create User</button><button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText(JSON.stringify(ROLES,null,2)); alert('Roles JSON copied')">Copy Roles JSON</button></div>
   </div>`;
 }
