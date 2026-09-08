@@ -335,10 +335,47 @@ async function doChangePassword(isFirst){
   }catch(e){ msgEl.innerHTML=`<span style="color:#dc2626;">Failed: ${e.message}</span>`; }
 }
 function logout(){ localStorage.clear(); location.reload(); }
+
+// Force non-admin to login if maintenance is ON — used on page load/render to avoid #backup dead-end
+async function forceMaintenanceRedirect(){
+  try{
+    const m=await fetch('/api/maintenance').then(r=>r.json());
+    if(m.enabled && (!user || user.role!=='admin')){
+      // Hard logout non-admin, show login
+      if(user && user.role!=='admin'){ localStorage.clear(); token=null; user=null; }
+      if(token && !user){ localStorage.clear(); token=null; user=null; }
+      $('#appView').style.display='none';
+      $('#loginView').style.display='flex';
+      const ov=document.getElementById('maintenanceOverlay');
+      if(ov) ov.style.display='none';
+      const loginCard=document.querySelector('.login-card');
+      if(loginCard && !document.getElementById('hardLoginMsg')){
+        const d=document.createElement('div');
+        d.id='hardLoginMsg';
+        d.className='alert';
+        d.style.cssText='background:#fef2f2; border:1px solid #fecaca; color:#991b1b; margin-top:10px; font-size:12px;';
+        d.innerHTML=m.enabled_until?`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b> — auto-off at <b>${new Date(m.enabled_until).toLocaleTimeString()}</b>.<br>Only <b>admin</b> can sign in to disable it now.`:`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b><br>Only <b>admin</b> can sign in to disable it now. Other accounts are blocked.`;
+        loginCard.appendChild(d);
+      }
+      document.getElementById('username').value='admin';
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
 function showApp(){
   if(!token){ $('#loginView').style.display='flex'; $('#appView').style.display='none'; return;}
+  // Guard: if maintenance is ON and non-admin, redirect to login BEFORE rendering any tab
+  forceMaintenanceRedirect().then(redirected=>{
+    if(redirected) return;
+    renderLoggedInApp();
+  }).catch(()=> renderLoggedInApp());
+}
+function renderLoggedInApp(){
   $('#loginView').style.display='none'; $('#appView').style.display='flex';
-  $('#userName').textContent=user.name||user.username; $('#userRole').textContent=user.role; $('#userAvatar').src=`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name||user.username)}&background=1e40af&color=fff`;
+  $('#userName').textContent=user.name||user.username;
+  if(user && user.name){ $('#userName').textContent=user.name||user.username; }
+  $('#userRole').textContent=user.role; $('#userAvatar').src=`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name||user.username)}&background=1e40af&color=fff`;
   renderNav();
   // Stay on last tab after refresh — not always dashboard
   let last = (location.hash||'').replace('#','').trim();
@@ -2078,7 +2115,10 @@ function renderBackup(){
 }
 async function loadMaintenance(){
   try{
-    const m=await fetch('/api/maintenance').then(r=>r.json());
+    const r=await fetch('/api/maintenance');
+    const m=await r.json();
+    // If maintenance ON and we're non-admin here, redirect to login (handles #backup reload dead-end)
+    if(r.status===503 && m.maintenance && (!user || user.role!=='admin')){ await forceMaintenanceRedirect(); return; }
     const el=document.getElementById('maintStatus');
     if(el){
       let untilTxt='';
