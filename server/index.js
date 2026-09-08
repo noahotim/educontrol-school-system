@@ -237,6 +237,19 @@ app.post('/api/sms/send', verify, (req,res)=>{
   res.json({sent: recipients.length, note:'SMS queued (mock - integrate SMS gateway in production)'});
 });
 
+// Auto-seed on first run (Render free has empty DB)
+function autoSeed(){
+  try{
+    const c = db.prepare('SELECT COUNT(*) as n FROM students').get().n;
+    if(c===0){
+      console.log('Empty DB detected — auto-seeding demo data...');
+      require('./seed');
+      console.log('Auto-seed done');
+    }
+  }catch(e){ console.log('autoSeed skip', e.message); }
+}
+autoSeed();
+
 // Backup
 app.get('/api/backup', verify, (req,res)=>{
   const src = path.join(__dirname,'../data/school.db');
@@ -245,6 +258,9 @@ app.get('/api/backup', verify, (req,res)=>{
 });
 app.post('/api/restore', verify, (req,res)=>{
   res.json({note:'Restore via uploading DB file to /data/school.db and restart server'});
+});
+app.post('/api/seed', verify, (req,res)=>{
+  try{ require('./seed'); res.json({ok:true, note:'Seeded demo data (50 students etc.)'}); }catch(e){ res.status(500).json({error:e.message}); }
 });
 
 // Other CRUDs
