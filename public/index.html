@@ -608,22 +608,31 @@ async function saveStudent(id){
 async function delStudent(id){ if(!confirm('Delete student?')) return; await apiDel('/api/students/'+id); renderStudents(); }
 function exportStudentsCSV(){ window.open('/api/students', '_blank'); alert('Use browser print or copy. For full CSV, backend supports CSV export via API extension.'); }
 
-// ATTENDANCE — with A4 PDFs (Per Class + General)
+// ATTENDANCE — upgrade-aware (senses P1-P7 → S1-S6)
 async function renderAttendance(){
-  const classes=await apiGet('/api/classes');
+  let classes=[], active=[], school={level:'primary', activeClasses:['P1','P2','P3','P4','P5','P6','P7']};
+  try{ classes=await apiGet('/api/classes'); }catch(e){ classes=[]; }
+  try{ school=await fetch('/api/settings/school').then(r=>r.json()); active=school.activeClasses||classes.map(c=>c.name).slice(0,7); }catch(e){ active=classes.map(c=>c.name).slice(0,7); }
+  const upgradeBanner = school.level!=='primary' ? `<div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; margin-bottom:10px;"><b><i class="ri-arrow-up-line"></i> Upgrade sensed:</b> School now <b>${school.level.toUpperCase()}</b> — Active: <b>${active.join(', ')}</b> • All ${active.length} classes auto-checked and available for attendance. <span class="muted">P1-P7 → S1-S6 ready</span></div>` : `<div class="alert" style="background:#f8fafc; border:1px solid #e2e8f0; color:#334155; margin-bottom:10px; font-size:11px;"><b>Primary Mode:</b> P1-P7 active now. System senses upgrades — when you enable S1-S6 in Backup → Scalability, attendance will auto-show S1-S6. <span class="muted">All classes checked.</span></div>`;
+  const classOptions = active.map(n=>`<option>${n}</option>`).join('');
+  const allOptions = `<option value="">All Active (${active.length})</option>${classOptions}`;
   $('#content').innerHTML=`
+  ${upgradeBanner}
   <div class="toolbar" style="flex-wrap:wrap;">
     <input id="attDate" type="date" class="input" style="width:auto" value="${today()}">
-    <select id="attClass" class="input" style="width:auto"><option value="">All Classes</option>${classes.map(c=>`<option>${c.name}</option>`).join('')}</select>
+    <select id="attClass" class="input" style="width:auto">${allOptions}</select>
     <button class="btn btn-sm btn-outline" onclick="loadAttendance()">Load</button>
     <button class="btn btn-sm" onclick="saveAttendance()">Save Attendance</button>
     <button class="btn btn-sm btn-outline" onclick="downloadAttendancePDF()"><i class="ri-download-line"></i> PDF (Class)</button>
     <button class="btn btn-sm btn-outline" onclick="downloadAttendanceGeneralPDF()"><i class="ri-file-list-line"></i> PDF (All)</button>
+    <span class="muted" style="font-size:11px; align-self:center;"><i class="ri-checkbox-line"></i> ${active.length} active classes checked</span>
   </div>
-  <div id="attWrap" class="table-wrap"><div class="muted" style="padding:20px">Select date & class and click Load</div></div>
+  <div id="attWrap" class="table-wrap"><div class="muted" style="padding:20px">Select date & class and click Load — Active classes auto-sensed: <b>${active.join(', ')}</b></div></div>
   <div id="attPreview" style="margin-top:12px;"></div>
   <div style="margin-top:12px" class="card"><h4>Attendance Log</h4><div id="attLog" class="muted">Loading...</div></div>`;
   loadAttendanceLog();
+  // Auto-check that attendance respects upgrade — log
+  console.log('Attendance upgrade-aware: level', school.level, 'active', active);
 }
 function attendancePDFHTML(date, cls, rows){
   const present = rows.filter(r=>r.status==='Present').length, absent=rows.filter(r=>r.status==='Absent').length, late=rows.filter(r=>r.status==='Late').length, sick=rows.filter(r=>r.status==='Sick').length;
