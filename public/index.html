@@ -1130,6 +1130,19 @@ function openResultModalForAssignment(examId, subject, cls){
     if(bulk && !bulk.querySelector('.assignNote')){ info.classList.add('assignNote'); bulk.prepend(info); }
   }, 400);
 }
+function filterBulkByClass(){
+  const sel=document.getElementById('r_class_filter');
+  if(!sel) return;
+  const cls=sel.value;
+  document.querySelectorAll('#bulkMode table tbody tr').forEach(tr=>{
+    const td=tr.querySelector('td:nth-child(4)'); // Class badge
+    const c=td? td.textContent.trim() : '';
+    tr.style.display = (!cls || c===cls) ? '' : 'none';
+  });
+  const vis=[...document.querySelectorAll('#bulkMode table tbody tr')].filter(tr=> tr.style.display!=='none').length;
+  const info=document.querySelector('#bulkMode .muted');
+  if(info) info.textContent=`${vis} students shown — filtered to ${cls}`;
+}
 function openExamModal(){ openModal(`<h3>Create Exam</h3><div class="form-grid" style="margin-top:12px"><div><label>Name</label><input id="e_name" class="input" placeholder="End of Term I"></div><div><label>Class</label><input id="e_class" class="input" placeholder="P7"></div><div><label>Term</label><input id="e_term" class="input" value="Term I"></div><div><label>Year</label><input id="e_year" class="input" value="2026"></div><div><label>Date</label><input id="e_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="saveExam()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
 async function saveExam(){ const body={name:$('#e_name').value, class:$('#e_class').value, term:$('#e_term').value, year:$('#e_year').value, date:$('#e_date').value}; if(!body.name) return alert('Name required'); await apiPost('/api/exams',body); closeModal(); renderExams(); }
 async function delExam(id){ if(!confirm('Delete exam & results?')) return; await apiDel('/api/exams/'+id); renderExams(); }
@@ -1175,7 +1188,8 @@ async function openResultModal(examId, examName){
     <div id="bulkMode">
       <div class="alert alert-info" style="margin-top:8px; font-size:11px;"><b>Bulk Mode — Per Class:</b> ${classInfo} • Enter marks 0-100 for all pupils in class. Grade auto.</div>
       ${subjectNotice}
-      <div style="margin-top:10px"><label>Subject ${isSubjectOnly?'<span class="badge badge-purple" style="margin-left:4px;">your subject'+(assignSubjects.length>1?'s':'')+' only — choose</span>':''}</label><select id="r_sub" class="input">${subjectOptions||'<option>No assigned subject</option>'}</select>
+      <div style="margin-top:10px"><label>Subject ${isSubjectOnly?'<span class="badge badge-purple" style="margin-left:4px;">your subject'+(assignSubjects.length>1?'s':'')+' — choose to enter</span>':''}</label><select id="r_sub" class="input">${subjectOptions||'<option>No assigned subject</option>'}</select></div>
+      ${isSubjectOnly && assignClasses.length>1 ? `<div style="margin-top:8px"><label>Class — choose among your assigned</label><select id="r_class_filter" class="input" onchange="filterBulkByClass()">${assignClasses.map(c=>`<option value="${c}" ${c===examClass?'selected':''}>${c} — ${allStudents.filter(s=>s.class===c).length} pupils</option>`).join('')}</select></div>` : ''}
       <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0;"><span class="muted" style="font-size:11px;">${displayBulk.length} students shown ${isSubjectOnly?'— your class only':''} • Scroll to see all</span><span class="badge badge-amber">${examClass?examClass:(isSubjectOnly? assignClasses.join(', '):'All')}</span></div>
       ${!displayBulk.length&&isSubjectOnly?`<div class="alert" style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; font-size:11px;">No pupils in your assigned class for this exam. ${examClass&&!assignClasses.includes(examClass)?'Exam class <b>'+examClass+'</b> is not your assigned class <b>'+assignClasses.join(', ')+'</b>. Use an exam for your class, or ask admin to assign you.':''}</div>`:''}
       <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Marks (0-100)</th><th>Grade</th></tr></thead><tbody>${displayBulk.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}" data-adm="${s.admission_no}" style="padding:6px;width:85px; font-size:12px;" placeholder="—" ${!displayBulk.length?'disabled':''} oninput="this.nextElementSibling.textContent=scoreGrade(this.value||0).g"></td><td><span class="badge badge-green" style="min-width:28px; display:inline-block; text-align:center;">-</span></td></tr>`).join('')}</tbody></table></div>
