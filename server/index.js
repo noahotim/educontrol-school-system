@@ -28,24 +28,33 @@ app.post('/api/upload/photo', verify, authorize('students','staff','*'), upload.
   res.json({url, filename:req.file.filename});
 });
 
-// Maintenance kill switch — blocks non-admin when enabled
+// Maintenance kill switch — HARD: blocks ALL non-admin (even login) when enabled
 function maintenanceGuard(req,res,next){
   try{
     const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
     if(m && m.enabled){
-      // allow admin, allow login, allow maintenance status, allow backup with key
-      const isLogin = req.path==='/api/login';
       const isMaintenanceGet = req.path==='/api/maintenance';
       const isBackupKey = req.path==='/api/backup' && req.query.key;
-      if(isLogin || isMaintenanceGet || isBackupKey) return next();
-      // verify token if present to check admin
+      if(isMaintenanceGet || isBackupKey) return next();
+      // HARD: check login — only admin login allowed
+      if(req.path==='/api/login'){
+        const {username}=req.body||{};
+        if(username==='admin') return next();
+        // check if user exists and is admin (for admin login)
+        try{
+          const u=db.prepare('SELECT role FROM users WHERE username=?').get(username);
+          if(u && u.role==='admin') return next();
+        }catch(e){}
+        return res.status(503).json({maintenance:true, hard:true, message: m.message || 'System under HARD maintenance — only admin can login', enabled_at: m.enabled_at, enabled_by: m.enabled_by});
+      }
+      // For all other routes, only admin token passes
       let isAdmin=false;
       const h=req.headers.authorization;
       let tok=null;
       if(h) tok=h.replace('Bearer ',''); else if(req.query && req.query.token) tok=req.query.token;
       if(tok){ try{ const {SECRET}=require('./auth'); const jwt=require('jsonwebtoken'); const u=jwt.verify(tok, SECRET); if(u.role==='admin') isAdmin=true; }catch(e){} }
       if(isAdmin) return next();
-      return res.status(503).json({maintenance:true, message: m.message || 'System under maintenance', enabled_at: m.enabled_at, enabled_by: m.enabled_by});
+      return res.status(503).json({maintenance:true, hard:true, message: m.message || 'System under HARD maintenance', enabled_at: m.enabled_at, enabled_by: m.enabled_by});
     }
   }catch(e){}
   next();

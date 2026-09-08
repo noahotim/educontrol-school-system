@@ -256,18 +256,39 @@ function navigate(id){
 }
 function toggleSidebar(){ $('#sidebar').classList.toggle('open'); }
 
-// AUTH
+// AUTH — hard maintenance: only admin can login when locked
 async function login(){
   const username=$('#username').value.trim(), password=$('#password').value.trim();
   $('#loginErr').textContent='';
+  // Pre-check hard maintenance for non-admin
+  try{
+    const m=await fetch('/api/maintenance').then(r=>r.json());
+    if(m.enabled && username!=='admin'){
+      try{ const u=await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})}).then(r=>r.json()); if(u.maintenance) throw new Error(u.message); }catch(e){}
+      // Still block with message
+      const msg=m.message||'System under HARD maintenance — only admin can login';
+      $('#loginErr').innerHTML=`<span style="color:#991b1b; font-weight:700;"><i class="ri-alarm-warning-line"></i> HARD LOCK:</span> ${msg}<br><span class="muted" style="font-size:11px;">Only <b>admin</b> can login now.</span>`;
+      checkMaintenance();
+      return;
+    }
+  }catch(e){}
   try{
     const r=await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})});
     const j=await r.json();
+    if(j.maintenance) throw new Error(j.message||'System under maintenance');
     if(!r.ok) throw new Error(j.error||'Login failed');
     token=j.token; user=j.user;
     localStorage.setItem('token',token); localStorage.setItem('user',JSON.stringify(user));
     showApp();
-  }catch(e){ $('#loginErr').textContent=e.message; }
+    // After login, check if hard maintenance and non-admin should be kicked
+    setTimeout(checkMaintenance, 400);
+  }catch(e){
+    if(e.message.includes('maintenance')||e.message.includes('HARD')){
+      $('#loginErr').innerHTML=`<span style="color:#991b1b; font-weight:700;"><i class="ri-alarm-warning-line"></i> HARD LOCK:</span> ${e.message}<br><span class="muted" style="font-size:11px;">Only <b>admin</b> can login.</span>`;
+    } else {
+      $('#loginErr').textContent=e.message;
+    }
+  }
 }
 function logout(){ localStorage.clear(); location.reload(); }
 function showApp(){
@@ -2000,16 +2021,41 @@ async function checkMaintenance(){
     if(m.enabled){
       const isAdmin = user && user.role==='admin';
       if(!isAdmin){
-        document.getElementById('maintOverlayMsg').textContent=m.message||'System under maintenance — please try again later';
-        document.getElementById('maintOverlayBy').textContent=m.enabled_by?`by ${m.enabled_by} at ${new Date(m.enabled_at).toLocaleString()}`:'';
+        // HARD: instant logout + hard block
+        if(token || user){
+          localStorage.clear(); token=null; user=null;
+          document.getElementById('appView').style.display='none';
+          document.getElementById('loginView').style.display='none';
+        }
+        document.getElementById('maintOverlayMsg').innerHTML=`<b style="color:#991b1b;">HARD MAINTENANCE — SYSTEM LOCKED</b><br>${m.message||'System under HARD maintenance — only admin can login'}`;
+        document.getElementById('maintOverlayBy').textContent=m.enabled_by?`Enabled by ${m.enabled_by} at ${new Date(m.enabled_at).toLocaleString()} — only admin can disable`:'';
+        // Make overlay hard: no close, only admin login
         overlay.style.display='flex';
-        // also block API with toast
-        if(user) setTimeout(()=> alert('Maintenance ON: '+m.message), 500);
+        overlay.onclick=null;
+        // Update login card to show hard message
+        const loginCard=document.querySelector('.login-card');
+        if(loginCard && !document.getElementById('hardLoginMsg')){
+          const d=document.createElement('div');
+          d.id='hardLoginMsg';
+          d.className='alert';
+          d.style.cssText='background:#fef2f2; border:1px solid #fecaca; color:#991b1b; margin-top:10px; font-size:12px;';
+          d.innerHTML=`<b><i class="ri-alarm-warning-line"></i> HARD LOCK:</b> Only <b>admin</b> can login now. All other roles blocked (503).`;
+          loginCard.appendChild(d);
+        }
+        // Show login view for admin to login
+        if(!user) document.getElementById('loginView').style.display='flex';
       } else {
         overlay.style.display='none';
+        const hardMsg=document.getElementById('hardLoginMsg');
+        if(hardMsg) hardMsg.remove();
       }
     } else {
       overlay.style.display='none';
+      const hardMsg=document.getElementById('hardLoginMsg');
+      if(hardMsg) hardMsg.remove();
+      if(!user && document.getElementById('loginView').style.display==='none' && !document.getElementById('maintenanceOverlay').style.display==='flex'){
+        document.getElementById('loginView').style.display='flex';
+      }
     }
   }catch(e){}
 }
