@@ -4,8 +4,9 @@ const bcrypt = require('bcryptjs');
 
 function seed(){
   console.log('Seeding demo data...');
-  // add users
+  // add users — 5 roles
   const users = [
+    ['headteacher','head123','headteacher','Mr. Kato Patrick (Head Teacher)','headteacher@school.local'],
     ['bursar','bursar123','bursar','Bursar Office','bursar@school.local'],
     ['teacher1','teacher123','teacher','Mr. Okello','okello@school.local'],
     ['nurse','nurse123','nurse','Sickbay Nurse','nurse@school.local'],

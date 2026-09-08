@@ -7,6 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 :root{--primary:#1e40af;--primary2:#3b82f6;--accent:#f59e0b;--bg:#f1f5f9;--card:#fff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--success:#10b981;--danger:#ef4444}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -70,6 +72,26 @@ label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bot
 .tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
 .alert{padding:10px 12px;border-radius:10px;font-size:13px;margin-bottom:12px}
 .alert-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+/* Report Card Premium */
+.rc-paper{ background:#fff; border:1px solid #cbd5e1; border-radius:14px; overflow:hidden; box-shadow:0 10px 30px rgba(15,23,42,.08); font-family:Inter,sans-serif; }
+.rc-head{ background:linear-gradient(135deg,#1e40af 0%,#3b82f6 60%,#06b6d4 100%); color:#fff; padding:18px 20px; display:flex; justify-content:space-between; align-items:center; }
+.rc-crest{ width:56px; height:56px; border-radius:14px; background:#fff; color:#1e40af; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800; }
+.rc-title{ text-align:center; flex:1; }
+.rc-title h2{ font-family:Plus Jakarta Sans,sans-serif; font-size:18px; letter-spacing:.04em; }
+.rc-title p{ font-size:11px; opacity:.9; }
+.rc-meta{ background:#f8fafc; border-bottom:1px solid #e2e8f0; display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:12px 16px; font-size:12px; }
+.rc-meta b{ color:#0f172a; }
+.rc-table{ width:100%; border-collapse:collapse; }
+.rc-table th{ background:#0f172a; color:#fff; font-size:11px; letter-spacing:.06em; padding:8px 10px; }
+.rc-table td{ padding:8px 10px; font-size:12px; border-bottom:1px solid #f1f5f9; }
+.rc-summary{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:14px 16px; }
+.rc-kpi{ background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:10px; text-align:center; }
+.rc-kpi .v{ font-size:18px; font-weight:800; color:#1e40af; }
+.rc-scale{ font-size:10px; color:#64748b; padding:8px 16px; background:#fff; border-top:1px dashed #e2e8f0; }
+.rc-sign{ display:flex; justify-content:space-between; padding:16px; font-size:12px; border-top:1px solid #e2e8f0; }
+.rc-watermark{ position:relative; }
+.rc-watermark::after{ content:"EDUCONTROL"; position:absolute; top:40%; left:50%; transform:translate(-50%,-50%) rotate(-18deg); font-size:54px; font-weight:800; color:rgba(30,64,175,.06); letter-spacing:.18em; pointer-events:none; }
+@media print{ .no-print{ display:none !important; } body *{ visibility:hidden; } #printCard, #printCard *{ visibility:visible; } #printCard{ position:absolute; left:0; top:0; width:100%; box-shadow:none; border:none; } }
 </style>
 </head>
 <body>
@@ -133,40 +155,67 @@ function fmt(n){ return Number(n||0).toLocaleString(); }
 function fmtMoney(n){ return 'UGX '+Number(n||0).toLocaleString(); }
 function today(){ return new Date().toISOString().slice(0,10); }
 
+const ROLES = {
+  admin: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff','payroll','fees','expenses','reports','procurement','inventory','sickbay','transport','events','sms','backup','roles'],
+  headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
+  teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','staff:read','events:read','transport:read'],
+  bursar: ['dashboard','students:read','staff:read','payroll','fees','expenses','reports','procurement','inventory','events:read','sms','aitutor:read'],
+  nurse: ['dashboard','students:read','sickbay','events:read','aitutor:read']
+};
+function canAccess(perm){
+  if(!user) return false;
+  const perms = ROLES[user.role] || [];
+  if(perms.includes('*')) return true;
+  if(perms.includes(perm)) return true;
+  const base = perm.split(':')[0];
+  if(perms.includes(base)) return true;
+  return false;
+}
 const navItems=[
-  {id:'dashboard', label:'Dashboard', icon:'ri-dashboard-line', section:'OVERVIEW'},
-  {id:'students', label:'Students', icon:'ri-team-line', section:'ACADEMIC'},
-  {id:'attendance', label:'Attendance', icon:'ri-calendar-check-line'},
-  {id:'classes', label:'Classes & Promotion', icon:'ri-building-line'},
-  {id:'exams', label:'Exams & Results', icon:'ri-file-list-3-line'},
-  {id:'reportcards', label:'Report Cards', icon:'ri-article-line'},
-  {id:'aitutor', label:'AI Tutor', icon:'ri-robot-line'},
-  {id:'staff', label:'Staff', icon:'ri-user-star-line', section:'STAFF'},
-  {id:'payroll', label:'Payroll', icon:'ri-money-dollar-circle-line'},
-  {id:'fees', label:'Fees & Payments', icon:'ri-wallet-3-line', section:'FINANCE'},
-  {id:'expenses', label:'Expenses & Income', icon:'ri-exchange-dollar-line'},
-  {id:'reports', label:'Financial Reports', icon:'ri-bar-chart-line'},
-  {id:'procurement', label:'Procurement', icon:'ri-shopping-cart-line', section:'PROCUREMENT'},
-  {id:'inventory', label:'Stock & Inventory', icon:'ri-stack-line'},
-  {id:'sickbay', label:'Sickbay', icon:'ri-heart-pulse-line', section:'SICKBAY'},
-  {id:'transport', label:'Transport', icon:'ri-bus-line', section:'TRANSPORT'},
-  {id:'events', label:'Events', icon:'ri-calendar-event-line', section:'EVENTS'},
-  {id:'sms', label:'SMS & Comms', icon:'ri-message-3-line', section:'COMMUNICATION'},
-  {id:'backup', label:'Backup & Security', icon:'ri-shield-keyhole-line', section:'SYSTEM'},
+  {id:'dashboard', label:'Dashboard', icon:'ri-dashboard-line', section:'OVERVIEW', perm:'dashboard'},
+  {id:'students', label:'Students', icon:'ri-team-line', section:'ACADEMIC', perm:'students:read'},
+  {id:'attendance', label:'Attendance', icon:'ri-calendar-check-line', perm:'attendance'},
+  {id:'classes', label:'Classes & Promotion', icon:'ri-building-line', perm:'classes:read'},
+  {id:'exams', label:'Exams & Results', icon:'ri-file-list-3-line', perm:'exams:read'},
+  {id:'reportcards', label:'Report Cards', icon:'ri-article-line', perm:'reportcards:read'},
+  {id:'aitutor', label:'AI Tutor', icon:'ri-robot-line', perm:'aitutor:read'},
+  {id:'staff', label:'Staff', icon:'ri-user-star-line', section:'STAFF', perm:'staff:read'},
+  {id:'payroll', label:'Payroll', icon:'ri-money-dollar-circle-line', perm:'payroll:read'},
+  {id:'fees', label:'Fees & Payments', icon:'ri-wallet-3-line', section:'FINANCE', perm:'fees:read'},
+  {id:'expenses', label:'Expenses & Income', icon:'ri-exchange-dollar-line', perm:'expenses:read'},
+  {id:'reports', label:'Financial Reports', icon:'ri-bar-chart-line', perm:'reports:read'},
+  {id:'procurement', label:'Procurement', icon:'ri-shopping-cart-line', section:'PROCUREMENT', perm:'procurement:read'},
+  {id:'inventory', label:'Stock & Inventory', icon:'ri-stack-line', perm:'inventory:read'},
+  {id:'sickbay', label:'Sickbay', icon:'ri-heart-pulse-line', section:'SICKBAY', perm:'sickbay:read'},
+  {id:'transport', label:'Transport', icon:'ri-bus-line', section:'TRANSPORT', perm:'transport:read'},
+  {id:'events', label:'Events', icon:'ri-calendar-event-line', section:'EVENTS', perm:'events:read'},
+  {id:'sms', label:'SMS & Comms', icon:'ri-message-3-line', section:'COMMUNICATION', perm:'sms:read'},
+  {id:'backup', label:'Backup & Security', icon:'ri-shield-keyhole-line', section:'SYSTEM', perm:'backup:read'},
+  {id:'roles', label:'Roles & Permissions', icon:'ri-shield-user-line', perm:'backup'},
 ];
 
 function renderNav(){
   const nav=$('#nav'); nav.innerHTML='';
   navItems.forEach(it=>{
-    if(it.section){ const s=document.createElement('div'); s.className='nav-section'; s.textContent=it.section; nav.appendChild(s); }
+    if(!canAccess(it.perm)) return;
+    if(it.section){ const existing = [...nav.querySelectorAll('.nav-section')].find(e=>e.textContent===it.section); if(!existing){ const s=document.createElement('div'); s.className='nav-section'; s.textContent=it.section; nav.appendChild(s); } }
     const d=document.createElement('div'); d.className='nav-item'; d.id='nav-'+it.id; d.innerHTML=`<i class="${it.icon}"></i> ${it.label}`; d.onclick=()=> navigate(it.id); nav.appendChild(d);
   });
+  // show role badge
+  const rb = document.getElementById('userRole'); if(rb) rb.innerHTML = user.role + (user.role==='admin'? ' • Full Access' : user.role==='bursar'? ' • Finance' : user.role==='teacher'? ' • Academic' : user.role==='nurse'? ' • Medical' : user.role==='headteacher'?' • Head Teacher':'');
 }
 function navigate(id){
+  const item = navItems.find(n=>n.id===id);
+  if(item && !canAccess(item.perm)){
+    $('#content').innerHTML=`<div class="card" style="text-align:center; padding:40px;"><i class="ri-lock-2-line" style="font-size:36px; color:var(--danger)"></i><h3 style="margin-top:10px;">Access Denied</h3><p class="muted" style="margin-top:6px;">Your role <b>${user.role}</b> cannot access <b>${item.label}</b>.</p><p class="muted">Allowed for: ${Object.entries(ROLES).filter(([r,perms])=> perms.includes(item.perm) || perms.includes(item.perm.split(':')[0]) || perms.includes('*')).map(([r])=>r).join(', ') || 'admin only'}</p><button class="btn btn-sm" style="margin-top:12px;" onclick="navigate('dashboard')">Back to Dashboard</button></div>`;
+    document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
+    $('#pageTitle').textContent = item.label + ' — Restricted';
+    return;
+  }
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   const el=document.getElementById('nav-'+id); if(el) el.classList.add('active');
   $('#pageTitle').textContent = navItems.find(n=>n.id===id)?.label || id;
-  const map={dashboard:renderDashboard, students:renderStudents, attendance:renderAttendance, classes:renderClasses, exams:renderExams, reportcards:renderReportCards, aitutor:renderAITutor, staff:renderStaff, payroll:renderPayroll, fees:renderFees, expenses:renderExpenses, reports:renderReports, procurement:renderProcurement, inventory:renderInventory, sickbay:renderSickbay, transport:renderTransport, events:renderEvents, sms:renderSMS, backup:renderBackup};
+  const map={dashboard:renderDashboard, students:renderStudents, attendance:renderAttendance, classes:renderClasses, exams:renderExams, reportcards:renderReportCards, aitutor:renderAITutor, staff:renderStaff, payroll:renderPayroll, fees:renderFees, expenses:renderExpenses, reports:renderReports, procurement:renderProcurement, inventory:renderInventory, sickbay:renderSickbay, transport:renderTransport, events:renderEvents, sms:renderSMS, backup:renderBackup, roles:renderRoles};
   (map[id]||renderDashboard)();
   if(window.innerWidth<700) $('#sidebar').classList.remove('open');
 }
@@ -363,38 +412,168 @@ async function viewResults(examId){
   $('#resView').innerHTML=`<div class="card"><h4>Results (${rows.length})</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.first_name} ${r.last_name}</td><td>${r.class}</td><td>${r.subject}</td><td>${r.marks}</td><td><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
-// REPORT CARDS
+// REPORT CARDS — Premium + PDF
 async function renderReportCards(){
   const students=await apiGet('/api/students');
   const exams=await apiGet('/api/exams');
   $('#content').innerHTML=`
-  <div class="card"><h4>Automatic Report Cards</h4><p class="muted">Select student & exam to generate printable report card (grades + average + position).</p>
-    <div class="form-grid" style="margin-top:12px"><div><label>Student</label><select id="rc_stu" class="input">${students.map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class} (${s.admission_no})</option>`).join('')}</select></div><div><label>Exam</label><select id="rc_exam" class="input">${exams.map(e=>`<option value="${e.id}">${e.name} ${e.year} ${e.term}</option>`).join('')}</select></div></div>
-    <button class="btn btn-sm" style="margin-top:12px" onclick="genReportCard()">Generate Report Card</button>
+  <div class="card">
+    <h4><i class="ri-article-line"></i> Premium Report Cards — Print & PDF</h4>
+    <p class="muted">Official term report with crest, watermark, grading scale and signatures. Generates high-res PDF.</p>
+    <div class="form-grid" style="margin-top:12px">
+      <div><label>Student</label><select id="rc_stu" class="input">${students.map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class} (${s.admission_no})</option>`).join('')}</select></div>
+      <div><label>Exam / Term</label><select id="rc_exam" class="input">${exams.map(e=>`<option value="${e.id}">${e.name} • ${e.class} • ${e.term} ${e.year}</option>`).join('')}</select></div>
+      <div><label>Attendance (days)</label><input id="rc_att" class="input" value="78/90"></div>
+      <div><label>Conduct</label><select id="rc_conduct" class="input"><option>Excellent</option><option>Very Good</option><option>Good</option><option>Fair</option></select></div>
+      <div class="full"><label>Class Teacher Comment</label><input id="rc_comment" class="input" value="Hardworking and disciplined. Keep it up!"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px" class="no-print">
+      <button class="btn btn-sm" onclick="genReportCard()"><i class="ri-file-text-line"></i> Generate Preview</button>
+      <button class="btn btn-sm btn-outline" onclick="downloadReportPDF()"><i class="ri-download-line"></i> Download PDF</button>
+      <button class="btn btn-sm btn-outline" onclick="window.print()"><i class="ri-printer-line"></i> Print</button>
+      <button class="btn btn-sm btn-outline" onclick="downloadAllPDFs()">Download All (Class)</button>
+    </div>
     <div id="rcOut" style="margin-top:16px"></div>
   </div>`;
 }
+function scoreGrade(m){
+  m=Number(m); if(m>=80) return {g:'D1',p:1,rem:'Excellent'}; if(m>=70) return {g:'D2',p:2,rem:'Very Good'}; if(m>=60) return {g:'C3',p:3,rem:'Good'}; if(m>=50) return {g:'C4',p:4,rem:'Fair Good'}; if(m>=40) return {g:'C5',p:5,rem:'Fair'}; if(m>=35) return {g:'C6',p:6,rem:'Pass'}; if(m>=28) return {g:'P7',p:7,rem:'Pass'}; if(m>=20) return {g:'P8',p:8,rem:'Weak'}; return {g:'F9',p:9,rem:'Fail'};
+}
+function division(avg){
+  avg=Number(avg); if(avg>=80) return 'Div 1'; if(avg>=60) return 'Div 2'; if(avg>=50) return 'Div 3'; if(avg>=40) return 'Div 4'; return 'Div U';
+}
 async function genReportCard(){
   const sid=$('#rc_stu').value, eid=$('#rc_exam').value;
+  const examSel = document.querySelector('#rc_exam option:checked');
+  const examName = examSel ? examSel.textContent : 'Term Report';
   const stu=await apiGet('/api/students/'+sid);
   const results=await apiGet('/api/results?exam_id='+eid+'&student_id='+sid);
   const allResults=await apiGet('/api/results?exam_id='+eid);
-  // compute average and ranking
-  const avg = results.length? (results.reduce((a,b)=>a+b.marks,0)/results.length).toFixed(1) : '0';
-  // ranking: group by student
-  const map={}; allResults.forEach(r=> { map[r.student_id]=(map[r.student_id]||0)+r.marks; });
-  const totals=Object.entries(map).map(([k,v])=> ({id:parseInt(k), total:v, count: allResults.filter(x=>x.student_id==k).length})).map(x=> ({...x, avg:x.total/x.count})).sort((a,b)=> b.avg-a.avg);
-  const pos = totals.findIndex(t=> t.id==sid)+1;
-  const grade = avg>=80?'D1':avg>=60?'Credit':avg>=40?'Pass':'Fail';
+  const sum = results.reduce((a,b)=> a+Number(b.marks||0),0);
+  const avg = results.length ? (sum/results.length).toFixed(1) : '0.0';
+  const agg = results.reduce((a,b)=> a+scoreGrade(b.marks).p,0);
+  const map={}; allResults.forEach(r=>{ map[r.student_id]=(map[r.student_id]||0)+Number(r.marks); });
+  const totals=Object.entries(map).map(([k,v])=>({id:parseInt(k), total:v, cnt: allResults.filter(x=>x.student_id==k).length})).map(x=>({...x, avg:x.total/x.cnt})).sort((a,b)=>b.avg-a.avg);
+  const pos = totals.findIndex(t=>t.id==sid)+1;
+  const div = division(avg);
+  const conduct = document.getElementById('rc_conduct') ? document.getElementById('rc_conduct').value : 'Good';
+  const comment = document.getElementById('rc_comment') ? document.getElementById('rc_comment').value : '';
+  const att = document.getElementById('rc_att') ? document.getElementById('rc_att').value : '';
+  const todayStr = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  const nextTerm = '02 Feb 2027';
   $('#rcOut').innerHTML=`
-  <div class="card" style="border:2px solid var(--primary);background:#fff" id="printCard">
-    <div style="text-align:center;border-bottom:2px solid var(--primary);padding-bottom:10px"><h2 style="color:var(--primary)">EDUCONTROL ACADEMY</h2><p class="muted">P.O Box 123, Kampala • Tel: 0772 000000 • Motto: Knowledge is Power</p><h3 style="margin-top:8px">REPORT CARD — ${document.querySelector('#rc_exam option:checked').textContent}</h3></div>
-    <div class="grid grid3" style="margin-top:12px"><div><b>Student:</b> ${stu.first_name} ${stu.last_name}</div><div><b>Adm No:</b> ${stu.admission_no}</div><div><b>Class:</b> ${stu.class}</div></div>
-    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Subject</th><th>Marks</th><th>Grade</th><th>Remarks</th></tr></thead><tbody>${results.length?results.map(r=>`<tr><td>${r.subject}</td><td>${r.marks}</td><td>${r.grade}</td><td>${r.marks>=50?'Good':'Needs improvement'}</td></tr>`).join(''):`<tr><td colspan=4 class="muted">No results for this exam yet. Enter results first.</td></tr>`}</tbody></table></div>
-    <div class="grid grid3" style="margin-top:12px"><div class="card" style="background:#f8fafc"><div class="muted">Average</div><div class="kpi">${avg}%</div></div><div class="card" style="background:#f8fafc"><div class="muted">Grade</div><div class="kpi">${grade}</div></div><div class="card" style="background:#f8fafc"><div class="muted">Position</div><div class="kpi">${pos||'-'} / ${totals.length}</div></div></div>
-    <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:13px"><span>Class Teacher: _______________</span><span>Head Teacher: _______________</span></div>
-    <button class="btn btn-sm" style="margin-top:12px" onclick="window.print()">Print Report Card</button>
+  <div id="printCard" class="rc-paper rc-watermark">
+    <div class="rc-head">
+      <div class="rc-crest">EC</div>
+      <div class="rc-title">
+        <h2>EDUCONTROL ACADEMY</h2>
+        <p>P.O. Box 123, Kampala • Tel: 0772 000000 / 0700 000000 • Email: info@educontrol.ac.ug</p>
+        <p style="margin-top:4px; font-weight:700; letter-spacing:.14em; font-size:11px;">MOTTO: KNOWLEDGE IS POWER • LIGHT • SERVICE</p>
+      </div>
+      <div style="text-align:right; font-size:11px; line-height:1.4;">
+        <div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px;"><b>TERM REPORT CARD</b><br>${examName}</div>
+        <div style="margin-top:6px;">Date: ${todayStr}</div>
+      </div>
+    </div>
+
+    <div class="rc-meta">
+      <div><span class="muted">Pupil:</span><br><b>${stu.first_name} ${stu.last_name}</b></div>
+      <div><span class="muted">Admission No:</span><br><b>${stu.admission_no}</b> • <span class="muted">Gender:</span> <b>${stu.gender||'-'}</b></div>
+      <div><span class="muted">Class:</span><br><b>${stu.class}</b> • <span class="muted">Stream:</span> <b>${stu.stream||'A'}</b></div>
+      <div><span class="muted">Attendance:</span><br><b>${att}</b> • <span class="muted">Conduct:</span> <b>${conduct}</b></div>
+    </div>
+
+    <div style="padding:12px 16px 0; font-size:11px; color:#334155; display:flex; justify-content:space-between;">
+      <span><b>Class Teacher:</b> ${document.querySelector('#userName')?document.querySelector('#userName').textContent:'Tr. Okello'}</span>
+      <span><b>Parent:</b> ${stu.parent_name||'-'} • ${stu.parent_phone||''}</span>
+    </div>
+
+    <div style="padding:12px 16px;">
+      <table class="rc-table">
+        <thead><tr><th style="width:28px">#</th><th>SUBJECT</th><th style="width:70px">MARKS</th><th style="width:60px">GRADE</th><th style="width:50px">POINT</th><th>REMARKS</th><th style="width:60px">INIT</th></tr></thead>
+        <tbody>
+          ${results.length ? results.map((r,i)=>{ const sc=scoreGrade(r.marks); return `<tr><td>${i+1}</td><td><b>${r.subject}</b></td><td style="text-align:center"><b>${r.marks}</b></td><td style="text-align:center"><span class="badge ${Number(r.marks)>=50?'badge-green':'badge-red'}">${sc.g}</span></td><td style="text-align:center">${sc.p}</td><td>${sc.rem}</td><td style="text-align:center; color:#94a3b8;">—</td></tr>`}).join('') : `<tr><td colspan=7 style="text-align:center; padding:18px;" class="muted">No results for this exam yet. Enter results in <b>Exams & Results</b> first.</td></tr>`}
+        </tbody>
+        ${results.length ? `<tfoot><tr style="background:#f8fafc; font-weight:700;"><td colspan=2 style="text-align:right">TOTAL</td><td style="text-align:center">${sum}</td><td colspan=2 style="text-align:center">AGG: ${agg}</td><td colspan=2>AVG: ${avg}% • ${div}</td></tr></tfoot>` : ``}
+      </table>
+    </div>
+
+    <div class="rc-summary">
+      <div class="rc-kpi"><div class="muted">Average</div><div class="v">${avg}%</div><div class="muted" style="font-size:10px;">${div}</div></div>
+      <div class="rc-kpi"><div class="muted">Aggregate</div><div class="v">${results.length?agg:'—'}</div><div class="muted" style="font-size:10px;">Best 8</div></div>
+      <div class="rc-kpi"><div class="muted">Position</div><div class="v">${pos||'—'} / ${totals.length||'—'}</div><div class="muted" style="font-size:10px;">Out of ${totals.length}</div></div>
+      <div class="rc-kpi"><div class="muted">Division</div><div class="v">${div}</div><div class="muted" style="font-size:10px;">${Number(avg)>=50?'Promoted':'Advise'}</div></div>
+    </div>
+
+    <div style="padding:0 16px; display:grid; grid-template-columns:1.2fr .8fr; gap:12px;">
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px;">
+        <div style="font-size:11px; font-weight:700; color:#0f172a;">Class Teacher's Comment</div>
+        <div style="font-size:12px; margin-top:4px; color:#334155; font-style:italic;">“${comment}”</div>
+        <div style="margin-top:8px; display:flex; gap:8px; font-size:11px;"><span>Conduct: <b>${conduct}</b></span> • <span>Attendance: <b>${att}</b></span></div>
+      </div>
+      <div style="background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:10px; font-size:11px;">
+        <div style="font-weight:700;">Next Term</div>
+        <div class="muted">Begins: <b style="color:#0f172a">${nextTerm}</b> • Fees: <b style="color:#0f172a">${stu.class && stu.class.startsWith('P') ? 'UGX 550,000' : 'UGX 850,000'}</b></div>
+        <div class="muted" style="margin-top:6px;">Requirements: Uniform, books, fees clearance.</div>
+      </div>
+    </div>
+
+    <div class="rc-scale">
+      <b>Grading Scale:</b> D1 80-100 (1) • D2 70-79 (2) • C3 60-69 (3) • C4 50-59 (4) • C5 40-49 (5) • C6 35-39 (6) • P7 28-34 (7) • P8 20-27 (8) • F9 0-19 (9) &nbsp; | &nbsp; <b>Divisions:</b> Div I 80%+, Div II 60%+, Div III 50%+, Div IV 40%+
+    </div>
+
+    <div class="rc-sign">
+      <div style="text-align:center"><div style="width:160px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Class Teacher</b><br><span class="muted">Sign & Stamp</span></div></div>
+      <div style="text-align:center"><div style="width:160px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Sign & Stamp</span></div></div>
+      <div style="text-align:center"><div style="width:160px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Parent / Guardian</b><br><span class="muted">Sign</span></div></div>
+    </div>
+    <div style="text-align:center; font-size:10px; color:#94a3b8; padding:8px; background:#f8fafc; border-top:1px solid #e2e8f0;">This report is computer generated • EduControl School System • ${todayStr} • Document ID: ${stu.admission_no}-${examName.replace(/[^A-Z0-9]/gi,'').slice(0,8).toUpperCase()}</div>
+  </div>
+  <div class="no-print" style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap;">
+    <button class="btn btn-sm" onclick="downloadReportPDF()"><i class="ri-download-line"></i> Download PDF</button>
+    <button class="btn btn-sm btn-outline" onclick="window.print()"><i class="ri-printer-line"></i> Print</button>
+    <span class="muted" style="align-self:center;">Tip: PDF is print-ready A4, crisp for parents & filing.</span>
   </div>`;
+}
+async function downloadReportPDF(){
+  const el = document.getElementById('printCard');
+  if(!el) return alert('Generate preview first');
+  const { jsPDF } = window.jspdf;
+  const canvas = await html2canvas(el, {scale:2, useCORS:true, backgroundColor:'#ffffff'});
+  const imgData = canvas.toDataURL('image/png');
+  const pdf = new jsPDF('p','mm','a4');
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const imgW = pageW - 10;
+  const imgH = canvas.height * imgW / canvas.width;
+  let y = 5;
+  if(imgH > pageH - 10){
+    // multi-page
+    let remaining = imgH, position = 0;
+    while(remaining > 0){
+      pdf.addImage(imgData, 'PNG', 5, y - position, imgW, imgH);
+      remaining -= pageH;
+      if(remaining > 0){ pdf.addPage(); position += pageH; }
+      else break;
+    }
+  } else {
+    pdf.addImage(imgData, 'PNG', 5, y, imgW, imgH);
+  }
+  const stuName = document.querySelector('#rc_stu option:checked') ? document.querySelector('#rc_stu option:checked').textContent.split('—')[0].trim().replace(/[^A-Za-z0-9]/g,'_') : 'Report';
+  pdf.save(stuName + '_ReportCard.pdf');
+}
+async function downloadAllPDFs(){
+  alert('Bulk PDF: Generates one PDF per student for this exam. Starting…');
+  const examId = document.getElementById('rc_exam').value;
+  const students = await apiGet('/api/students');
+  const examStudents = students.slice(0,10); // limit to 10 for demo to avoid hang
+  for(let i=0;i<examStudents.length;i++){
+    document.getElementById('rc_stu').value = examStudents[i].id;
+    await genReportCard();
+    await new Promise(r=> setTimeout(r,600));
+    await downloadReportPDF();
+    await new Promise(r=> setTimeout(r,400));
+  }
 }
 
 // AI TUTOR
@@ -653,15 +832,59 @@ function renderBackup(){
   $('#content').innerHTML=`
   <div class="grid grid2">
     <div class="card"><h4><i class="ri-shield-keyhole-line"></i> Backup & Data Security</h4><p class="muted" style="margin:8px 0">Database is SQLite file at <code>data/school.db</code>. On Render, add a Disk for persistence.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-sm" onclick="backupDB()"><i class="ri-download-line"></i> Download Backup (.db)</button><button class="btn btn-sm btn-outline" onclick="alert('To restore: upload your .db to data/school.db on server and restart. For Render, use SFTP or redeploy with file.')">Restore Data</button></div>
-      <div class="alert alert-info" style="margin-top:12px"><b>Role-Based Access:</b> admin (full), bursar (finance), teacher (academic), nurse (sickbay). Create users in Dashboard → Users. JWT auth protects all APIs.</div>
-      <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>bursar</option><option>teacher</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-sm" onclick="backupDB()"><i class="ri-download-line"></i> Download Backup (.db)</button><button class="btn btn-sm btn-outline" onclick="alert('To restore: upload your .db to data/school.db on server and restart. For Render, use SFTP or redeploy with file.')">Restore Data</button><button class="btn btn-sm btn-outline" onclick="navigate('roles')"><i class="ri-shield-user-line"></i> View Roles</button></div>
+      <div class="alert alert-info" style="margin-top:12px"><b>Role-Based Access:</b> 5 roles enforced on frontend + backend (403 if forbidden). See <b>Roles & Permissions</b> page for full matrix.</div>
+      <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>headteacher</option><option>teacher</option><option>bursar</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
+      <div class="alert" style="margin-top:10px; background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>Permanent Backup Link:</b><br><code style="font-size:10px; word-break:break-all;">${location.origin}/api/backup?key=educontrol-permanent-2026</code><br><span style="font-size:11px;">Never expires — bookmark for automated backups.</span></div>
     </div>
     <div class="card"><h4>Secure User Accounts</h4><div id="userList" class="muted">Loading...</div>
-      <h4 style="margin-top:14px">Protect Important Records</h4><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--muted)"><li>Daily auto-backup recommended (cron on Render)</li><li>Enable Render Disk for <code>/data</code> persistence</li><li>JWT 7-day expiry • bcrypt passwords</li><li>All deletes require confirmation</li></ul>
+      <h4 style="margin-top:14px">Protect Important Records</h4><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--muted)"><li>Daily auto-backup recommended (cron on Render)</li><li>Enable Render Disk for <code>/data</code> persistence</li><li>JWT 10y + permanent ?key — bcrypt passwords</li><li>All deletes require confirmation • 403 on forbidden role</li></ul>
     </div>
   </div>`;
-  apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; });
+  apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; }).catch(()=>{ $('#userList').innerHTML=`<div class="alert alert-info">Only admin/headteacher can view users. Your role <b>${user.role}</b> cannot access this.</div>`; });
+}
+function renderRoles(){
+  const matrix = [
+    {feature:'Dashboard', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'✅', nurse:'✅'},
+    {feature:'Students', admin:'CRUD', headteacher:'CRUD', teacher:'CRU', bursar:'View', nurse:'View'},
+    {feature:'Attendance', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'❌', nurse:'❌'},
+    {feature:'Classes / Promotion', admin:'✅', headteacher:'✅', teacher:'View', bursar:'❌', nurse:'❌'},
+    {feature:'Exams & Results', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'❌', nurse:'❌'},
+    {feature:'Report Cards + PDF', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'❌', nurse:'❌'},
+    {feature:'AI Tutor', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'View', nurse:'View'},
+    {feature:'Staff Records', admin:'CRUD', headteacher:'View', teacher:'View', bursar:'View', nurse:'❌'},
+    {feature:'Payroll / Salary', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌'},
+    {feature:'Fees & Payments', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌'},
+    {feature:'Expenses / Income', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌'},
+    {feature:'Financial Reports', admin:'✅', headteacher:'View', teacher:'❌', bursar:'✅', nurse:'❌'},
+    {feature:'Procurement', admin:'✅', headteacher:'✅', teacher:'View', bursar:'CRUD', nurse:'❌'},
+    {feature:'Stock & Inventory', admin:'✅', headteacher:'✅', teacher:'View', bursar:'CRUD', nurse:'❌'},
+    {feature:'Sickbay / Medical', admin:'✅', headteacher:'View', teacher:'❌', bursar:'❌', nurse:'CRUD'},
+    {feature:'Transport', admin:'✅', headteacher:'✅', teacher:'View', bursar:'❌', nurse:'❌'},
+    {feature:'Events', admin:'CRUD', headteacher:'CRUD', teacher:'View', bursar:'View', nurse:'View'},
+    {feature:'SMS & Comms', admin:'✅', headteacher:'✅', teacher:'❌', bursar:'✅', nurse:'❌'},
+    {feature:'Backup & Users', admin:'✅', headteacher:'View', teacher:'❌', bursar:'❌', nurse:'❌'},
+  ];
+  $('#content').innerHTML=`
+  <div class="card">
+    <h4><i class="ri-shield-user-line"></i> Roles & Permissions — Who Can Access What</h4>
+    <p class="muted" style="margin-top:6px;">Enforced on both frontend (nav hidden) and backend (403 Forbidden). Your current role: <span class="badge badge-blue">${user.role}</span></p>
+    <div class="table-wrap" style="margin-top:12px;">
+      <table><thead><tr><th>Feature</th><th>Admin</th><th>Head Teacher</th><th>Teacher</th><th>Bursar</th><th>Nurse</th></tr></thead>
+      <tbody>${matrix.map(r=>`<tr><td><b>${r.feature}</b></td><td style="text-align:center">${r.admin}</td><td style="text-align:center">${r.headteacher}</td><td style="text-align:center">${r.teacher}</td><td style="text-align:center">${r.bursar}</td><td style="text-align:center">${r.nurse}</td></tr>`).join('')}</tbody></table>
+    </div>
+    <div class="grid grid3" style="margin-top:14px;">
+      <div class="card" style="background:#eff6ff; border-color:#bfdbfe;"><b>Admin</b><div class="muted" style="margin-top:4px; font-size:12px;">Full system owner. CRUD all modules, manage users, backup/restore, all finance & academic. <br><b>Demo:</b> admin / admin123</div></div>
+      <div class="card" style="background:#f0fdf4; border-color:#bbf7d0;"><b>Head Teacher</b><div class="muted" style="margin-top:4px; font-size:12px;">Academic leader. Full academic + view finance + approve procurement. Cannot delete users/backup. <br><b>Create:</b> headteacher / 123456</div></div>
+      <div class="card" style="background:#fefce8; border-color:#fde68a;"><b>Teacher</b><div class="muted" style="margin-top:4px; font-size:12px;">Classroom. Students, attendance, exams, report cards, AI tutor. No finance, no payroll, no sickbay edit. <br><b>Demo:</b> teacher1 / teacher123</div></div>
+    </div>
+    <div class="grid grid2" style="margin-top:10px;">
+      <div class="card" style="background:#fef2f2; border-color:#fecaca;"><b>Bursar</b><div class="muted" style="margin-top:4px; font-size:12px;">Finance officer. Fees, payments, expenses, payroll, procurement, inventory, financial reports. No academic edit, no sickbay. <br><b>Demo:</b> bursar / bursar123</div></div>
+      <div class="card" style="background:#fdf2f8; border-color:#fbcfe8;"><b>Nurse</b><div class="muted" style="margin-top:4px; font-size:12px;">Medical. Sickbay visits, medicines, student medical records (view students). No finance, no exams. <br><b>Demo:</b> nurse / nurse123</div></div>
+    </div>
+    <div class="alert alert-info" style="margin-top:14px;"><b>Security:</b> All APIs check <code>role</code> from JWT via <code>authorize('perm')</code> in <code>server/index.js:1</code>. Forbidden → <code>403 Forbidden — bursar cannot access exams</code>. Frontend hides nav items via <code>canAccess()</code> — but backend is the source of truth.</div>
+    <div style="display:flex; gap:8px; margin-top:10px;"><button class="btn btn-sm" onclick="navigate('backup')"><i class="ri-user-add-line"></i> Create User</button><button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText(JSON.stringify(ROLES,null,2)); alert('Roles JSON copied')">Copy Roles JSON</button></div>
+  </div>`;
 }
 async function createUser(){
   const body={username:$('#u_user').value, password:$('#u_pass').value, role:$('#u_role').value, name:$('#u_name').value};

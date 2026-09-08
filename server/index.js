@@ -5,7 +5,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const dayjs = require('dayjs');
 const db = require('./db');
-const { sign, verify, verifyWithKey, BACKUP_KEY } = require('./auth');
+const { sign, verify, verifyWithKey, role, BACKUP_KEY } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,23 +32,50 @@ app.post('/api/register', verify, (req,res)=>{
   }catch(e){ res.status(400).json({error:e.message});}
 });
 app.get('/api/me', verify, (req,res)=> res.json(req.user));
-app.get('/api/users', verify, (req,res)=> res.json(db.prepare('SELECT id,username,role,name,email,created_at FROM users').all()));
+app.get('/api/users', verify, role('admin','headteacher'), (req,res)=> res.json(db.prepare('SELECT id,username,role,name,email,created_at FROM users').all()));
 
-// Helper to create CRUD
-function crud(table, opts={}){
+// RBAC — who can do what
+const RBAC = {
+  admin: ['*'],
+  headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff:read','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
+  teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','staff:read','events:read','transport:read'],
+  bursar: ['dashboard','students:read','staff:read','fees','expenses','reports','payroll','procurement','inventory','events:read','sms'],
+  nurse: ['dashboard','students:read','sickbay','events:read','aitutor:read'],
+};
+function can(role, perm){
+  if(!role) return false;
+  const perms = RBAC[role] || [];
+  if(perms.includes('*')) return true;
+  if(perms.includes(perm)) return true;
+  const base = perm.split(':')[0];
+  if(perms.includes(base)) return true;
+  return false;
+}
+function authorize(perm){
+  return (req,res,next)=>{
+    if(can(req.user.role, perm)) return next();
+    return res.status(403).json({error:`Forbidden — ${req.user.role} cannot access ${perm}. Allowed: ${(RBAC[req.user.role]||[]).join(', ')}`});
+  };
+}
+app.get('/api/roles', verify, (req,res)=> res.json({roles: RBAC, me: req.user.role}));
+
+// Helper to create CRUD with optional perm
+function crud(table, permBase){
+  if(!permBase) permBase = table;
   const router = express.Router();
-  router.get('/', verify, (req,res)=>{
+  const pRead = permBase.includes(':') ? permBase : permBase+':read';
+  const pWrite = permBase.includes(':') ? permBase.split(':')[0] : permBase;
+  router.get('/', verify, authorize(pRead), (req,res)=>{
     const rows = db.prepare(`SELECT * FROM ${table} ORDER BY id DESC`).all();
     res.json(rows);
   });
-  router.get('/:id', verify, (req,res)=>{
+  router.get('/:id', verify, authorize(pRead), (req,res)=>{
     const row = db.prepare(`SELECT * FROM ${table} WHERE id=?`).get(req.params.id);
     if(!row) return res.status(404).json({error:'Not found'});
     res.json(row);
   });
-  router.post('/', verify, (req,res)=>{
+  router.post('/', verify, authorize(pWrite), (req,res)=>{
     const data = req.body;
-    // filter empty
     const keys = Object.keys(data).filter(k=> data[k]!==undefined);
     if(keys.length===0) return res.status(400).json({error:'No data'});
     const cols = keys.join(',');
@@ -59,7 +86,7 @@ function crud(table, opts={}){
       res.json({id:r.lastInsertRowid});
     }catch(e){ res.status(400).json({error:e.message});}
   });
-  router.put('/:id', verify, (req,res)=>{
+  router.put('/:id', verify, authorize(pWrite), (req,res)=>{
     const data = req.body;
     const keys = Object.keys(data).filter(k=> k!=='id');
     if(keys.length===0) return res.json({ok:true});
@@ -69,22 +96,22 @@ function crud(table, opts={}){
       res.json({ok:true});
     }catch(e){ res.status(400).json({error:e.message});}
   });
-  router.delete('/:id', verify, (req,res)=>{
+  router.delete('/:id', verify, authorize(pWrite), (req,res)=>{
     db.prepare(`DELETE FROM ${table} WHERE id=?`).run(req.params.id);
     res.json({ok:true});
   });
   return router;
 }
 
-// Custom students routes with search
-app.get('/api/students', verify, (req,res)=>{
+// Custom students routes with search — RBAC
+app.get('/api/students', verify, authorize('students:read'), (req,res)=>{
   const q = req.query.q;
   let rows;
   if(q) rows = db.prepare(`SELECT * FROM students WHERE first_name LIKE ? OR last_name LIKE ? OR admission_no LIKE ? OR class LIKE ? ORDER BY id DESC`).all(`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`);
   else rows = db.prepare('SELECT * FROM students ORDER BY id DESC').all();
   res.json(rows);
 });
-app.post('/api/students', verify, (req,res)=>{
+app.post('/api/students', verify, authorize('students'), (req,res)=>{
   const d=req.body;
   if(!d.admission_no) d.admission_no = 'ADM'+Date.now().toString().slice(-6);
   if(!d.admission_date) d.admission_date = dayjs().format('YYYY-MM-DD');
@@ -94,26 +121,25 @@ app.post('/api/students', verify, (req,res)=>{
     res.json({id:r.lastInsertRowid});
   }catch(e){ res.status(400).json({error:e.message});}
 });
-app.put('/api/students/:id', verify, (req,res)=>{
+app.put('/api/students/:id', verify, authorize('students'), (req,res)=>{
   const d=req.body; const keys=Object.keys(d).filter(k=>k!=='id');
   const set=keys.map(k=> `${k}=?`).join(',');
   try{ db.prepare(`UPDATE students SET ${set} WHERE id=?`).run(...keys.map(k=> d[k]), req.params.id); res.json({ok:true});}catch(e){res.status(400).json({error:e.message});}
 });
-app.delete('/api/students/:id', verify, (req,res)=>{ db.prepare('DELETE FROM students WHERE id=?').run(req.params.id); res.json({ok:true}); });
-app.get('/api/students/:id', verify, (req,res)=>{ const r=db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id); if(!r) return res.status(404).json({error:'Not found'}); res.json(r);});
+app.delete('/api/students/:id', verify, authorize('students'), (req,res)=>{ db.prepare('DELETE FROM students WHERE id=?').run(req.params.id); res.json({ok:true}); });
+app.get('/api/students/:id', verify, authorize('students:read'), (req,res)=>{ const r=db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id); if(!r) return res.status(404).json({error:'Not found'}); res.json(r);});
 
 // Attendance bulk
-app.post('/api/attendance/bulk', verify, (req,res)=>{
-  const {date, records} = req.body; // records: [{student_id,status}]
+app.post('/api/attendance/bulk', verify, authorize('attendance'), (req,res)=>{
+  const {date, records} = req.body;
   const stmt = db.prepare('INSERT OR REPLACE INTO attendance (student_id,date,status) VALUES (?,?,?)');
   const tx=db.transaction((recs)=>{ for(const r of recs) stmt.run(r.student_id, date, r.status); });
   try{ tx(records); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message});}
 });
-app.get('/api/attendance', verify, (req,res)=>{
+app.get('/api/attendance', verify, authorize('attendance:read'), (req,res)=>{
   const {date, class:cls} = req.query;
   let q = 'SELECT a.*, s.first_name, s.last_name, s.class, s.admission_no FROM attendance a JOIN students s ON s.id=a.student_id';
-  const params=[];
-  const where=[];
+  const params=[]; const where=[];
   if(date){ where.push('a.date=?'); params.push(date); }
   if(cls){ where.push('s.class=?'); params.push(cls); }
   if(where.length) q+=' WHERE '+where.join(' AND ');
@@ -122,7 +148,7 @@ app.get('/api/attendance', verify, (req,res)=>{
 });
 
 // Results
-app.get('/api/results', verify, (req,res)=>{
+app.get('/api/results', verify, authorize('exams:read'), (req,res)=>{
   const {exam_id, student_id} = req.query;
   let q='SELECT r.*, s.first_name, s.last_name, s.class FROM results r JOIN students s ON s.id=r.student_id WHERE 1=1';
   const p=[];
@@ -130,8 +156,8 @@ app.get('/api/results', verify, (req,res)=>{
   if(student_id){ q+=' AND r.student_id=?'; p.push(student_id);}
   res.json(db.prepare(q).all(...p));
 });
-app.post('/api/results/bulk', verify, (req,res)=>{
-  const {exam_id, subject, entries} = req.body; // entries [{student_id,marks}]
+app.post('/api/results/bulk', verify, authorize('exams'), (req,res)=>{
+  const {exam_id, subject, entries} = req.body;
   const stmt=db.prepare('INSERT OR REPLACE INTO results (exam_id, student_id, subject, marks, grade) VALUES (?,?,?,?,?)');
   function grade(m){ if(m>=80) return 'D1'; if(m>=70) return 'D2'; if(m>=60) return 'C3'; if(m>=50) return 'C4'; if(m>=40) return 'C5'; if(m>=35) return 'C6'; if(m>=28) return 'P7'; if(m>=20) return 'P8'; return 'F9';}
   const tx=db.transaction((en)=>{ for(const e of en) stmt.run(exam_id, e.student_id, subject, e.marks, grade(e.marks)); });
@@ -139,25 +165,16 @@ app.post('/api/results/bulk', verify, (req,res)=>{
 });
 
 // Payroll generate
-app.post('/api/payroll/generate', verify, (req,res)=>{
-  const {month} = req.body; // YYYY-MM
+app.post('/api/payroll/generate', verify, authorize('payroll'), (req,res)=>{
+  const {month} = req.body;
   const staff = db.prepare('SELECT * FROM staff').all();
   const stmt=db.prepare('INSERT OR REPLACE INTO payroll (staff_id, month, basic, allowances, deductions, net) VALUES (?,?,?,?,?,?)');
-  const tx=db.transaction(()=>{
-    for(const s of staff){
-      const basic = s.salary||0;
-      const allowances = Math.round(basic*0.1);
-      const deductions = Math.round(basic*0.05);
-      const net = basic+allowances-deductions;
-      stmt.run(s.id, month, basic, allowances, deductions, net);
-    }
-  });
-  tx();
-  res.json({ok:true, count: staff.length});
+  const tx=db.transaction(()=>{ for(const s of staff){ const basic=s.salary||0; const allowances=Math.round(basic*0.1); const deductions=Math.round(basic*0.05); const net=basic+allowances-deductions; stmt.run(s.id, month, basic, allowances, deductions, net); } });
+  tx(); res.json({ok:true, count: staff.length});
 });
 
 // Finance overview
-app.get('/api/finance/summary', verify, (req,res)=>{
+app.get('/api/finance/summary', verify, authorize('reports:read'), (req,res)=>{
   const totalFees = db.prepare('SELECT COALESCE(SUM(amount),0) as s FROM payments').get().s;
   const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount),0) as s FROM expenses').get().s;
   const totalIncome = db.prepare('SELECT COALESCE(SUM(amount),0) as s FROM incomes').get().s;
@@ -166,7 +183,7 @@ app.get('/api/finance/summary', verify, (req,res)=>{
 });
 
 // Dashboard stats
-app.get('/api/dashboard', verify, (req,res)=>{
+app.get('/api/dashboard', verify, authorize('dashboard:read'), (req,res)=>{
   const students = db.prepare('SELECT COUNT(*) as n FROM students').get().n;
   const staff = db.prepare('SELECT COUNT(*) as n FROM staff').get().n;
   const fees = db.prepare('SELECT COALESCE(SUM(amount),0) as s FROM payments').get().s;
@@ -185,23 +202,17 @@ app.get('/api/dashboard', verify, (req,res)=>{
 });
 
 // Promotion
-app.post('/api/promote', verify, (req,res)=>{
+app.post('/api/promote', verify, authorize('classes'), (req,res)=>{
   const {from_class, to_class, year} = req.body;
   const students = db.prepare('SELECT * FROM students WHERE class=?').all(from_class);
   const upd = db.prepare('UPDATE students SET class=? WHERE id=?');
   const ins = db.prepare('INSERT INTO promotions (student_id, from_class, to_class, year, date) VALUES (?,?,?,?,?)');
-  const tx=db.transaction(()=>{
-    for(const s of students){
-      upd.run(to_class, s.id);
-      ins.run(s.id, from_class, to_class, year, dayjs().format('YYYY-MM-DD'));
-    }
-  });
-  tx();
-  res.json({promoted: students.length});
+  const tx=db.transaction(()=>{ for(const s of students){ upd.run(to_class, s.id); ins.run(s.id, from_class, to_class, year, dayjs().format('YYYY-MM-DD')); } });
+  tx(); res.json({promoted: students.length});
 });
 
 // AI Tutor - simple rule based
-app.post('/api/ai-tutor', verify, (req,res)=>{
+app.post('/api/ai-tutor', verify, authorize('aitutor:read'), (req,res)=>{
   const {question, student_id} = req.body;
   // get student results for personalization
   let context='';
@@ -226,7 +237,7 @@ app.post('/api/ai-tutor', verify, (req,res)=>{
 });
 
 // SMS mock
-app.post('/api/sms/send', verify, (req,res)=>{
+app.post('/api/sms/send', verify, authorize('sms'), (req,res)=>{
   const {recipients, message, type} = req.body; // recipients [{phone,name}]
   const stmt=db.prepare('INSERT INTO sms_logs (recipient, phone, message, type) VALUES (?,?,?,?)');
   const tx=db.transaction(()=>{
@@ -280,33 +291,33 @@ app.post('/api/seed', verify, (req,res)=>{
   try{ require('./seed'); res.json({ok:true, note:'Seeded demo data (50 students etc.)'}); }catch(e){ res.status(500).json({error:e.message}); }
 });
 
-// Other CRUDs
-app.use('/api/staff', crud('staff'));
-app.use('/api/classes', crud('classes'));
-app.use('/api/subjects', crud('subjects'));
-app.use('/api/exams', crud('exams'));
-app.use('/api/fees-structure', crud('fees_structure'));
-app.use('/api/payments', crud('payments'));
-app.use('/api/expenses', crud('expenses'));
-app.use('/api/incomes', crud('incomes'));
-app.use('/api/suppliers', crud('suppliers'));
-app.use('/api/requisitions', crud('requisitions'));
-app.use('/api/purchase-orders', crud('purchase_orders'));
-app.use('/api/inventory', crud('inventory'));
-app.use('/api/goods-received', crud('goods_received'));
-app.use('/api/medical-records', crud('medical_records'));
-app.use('/api/medicines', crud('medicines'));
-app.use('/api/vehicles', crud('vehicles'));
-app.use('/api/drivers', crud('drivers'));
-app.use('/api/routes', crud('routes'));
-app.use('/api/transport-reg', crud('transport_reg'));
-app.use('/api/trips', crud('trips'));
-app.use('/api/events', crud('events'));
-app.use('/api/sms-logs', crud('sms_logs'));
-app.use('/api/payrolls', crud('payroll'));
+// Other CRUDs — RBAC mapped (table, perm)
+app.use('/api/staff', crud('staff','staff'));
+app.use('/api/classes', crud('classes','classes'));
+app.use('/api/subjects', crud('subjects','exams'));
+app.use('/api/exams', crud('exams','exams'));
+app.use('/api/fees-structure', crud('fees_structure','fees'));
+app.use('/api/payments', crud('payments','fees'));
+app.use('/api/expenses', crud('expenses','expenses'));
+app.use('/api/incomes', crud('incomes','expenses'));
+app.use('/api/suppliers', crud('suppliers','procurement'));
+app.use('/api/requisitions', crud('requisitions','procurement'));
+app.use('/api/purchase-orders', crud('purchase_orders','procurement'));
+app.use('/api/inventory', crud('inventory','inventory'));
+app.use('/api/goods-received', crud('goods_received','procurement'));
+app.use('/api/medical-records', crud('medical_records','sickbay'));
+app.use('/api/medicines', crud('medicines','sickbay'));
+app.use('/api/vehicles', crud('vehicles','transport'));
+app.use('/api/drivers', crud('drivers','transport'));
+app.use('/api/routes', crud('routes','transport'));
+app.use('/api/transport-reg', crud('transport_reg','transport'));
+app.use('/api/trips', crud('trips','transport'));
+app.use('/api/events', crud('events','events'));
+app.use('/api/sms-logs', crud('sms_logs','sms'));
+app.use('/api/payrolls', crud('payroll','payroll'));
 
 // Reports
-app.get('/api/reports/income-statement', verify, (req,res)=>{
+app.get('/api/reports/income-statement', verify, authorize('reports:read'), (req,res)=>{
   const {from, to} = req.query;
   let pFilter = ''; let eFilter='';
   const params=[];
@@ -317,7 +328,7 @@ app.get('/api/reports/income-statement', verify, (req,res)=>{
   const gross = income - expense;
   res.json({income, expense, gross, from, to});
 });
-app.get('/api/reports/balance-sheet', verify, (req,res)=>{
+app.get('/api/reports/balance-sheet', verify, authorize('reports:read'), (req,res)=>{
   const assets = db.prepare('SELECT COALESCE(SUM(quantity*unit_price),0) as s FROM inventory').get().s;
   const cash = db.prepare('SELECT COALESCE(SUM(amount),0) as s FROM payments').get().s - db.prepare('SELECT COALESCE(SUM(amount),0) as s FROM expenses').get().s;
   const liabilities = 0;
