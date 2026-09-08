@@ -181,6 +181,60 @@ app.get('/api/finance/summary', verify, authorize('reports:read'), (req,res)=>{
   const balance = (totalFees+totalIncome) - totalExpenses;
   res.json({totalFees, totalExpenses, totalIncome, balance});
 });
+// Fee Defaulters — easiest mechanism to filter and get parents
+app.get('/api/fees/defaulters', verify, authorize('fees:read'), (req,res)=>{
+  const {term, class:cls} = req.query;
+  const targetTerm = term || 'Term I';
+  // Get all students (filtered by class if needed)
+  let students;
+  if(cls) students = db.prepare('SELECT * FROM students WHERE class=? ORDER BY class, first_name').all(cls);
+  else students = db.prepare('SELECT * FROM students ORDER BY class, first_name').all();
+  const defaulters=[];
+  for(const s of students){
+    // Find fees for this student's class+term
+    const fee = db.prepare('SELECT * FROM fees_structure WHERE class=? AND term=?').get(s.class, targetTerm)
+             || db.prepare('SELECT * FROM fees_structure WHERE term=? LIMIT 1').get(targetTerm);
+    const due = fee ? fee.amount : 0;
+    if(due===0) continue; // no fee setup, skip
+    const paidRow = db.prepare('SELECT COALESCE(SUM(amount),0) as sum FROM payments WHERE student_id=? AND term=?').get(s.id, targetTerm);
+    const paid = paidRow.sum || 0;
+    const balance = due - paid;
+    if(balance > 0){
+      defaulters.push({
+        student_id: s.id, admission_no: s.admission_no, first_name: s.first_name, last_name: s.last_name,
+        class: s.class, parent_name: s.parent_name, parent_phone: s.parent_phone, parent_email: s.parent_email,
+        due, paid, balance, term: targetTerm, status: paid===0?'Not Paid': balance>due*0.5?'Partial (Owes >50%)':'Partial'
+      });
+    }
+  }
+  // Sort by balance owed descending
+  defaulters.sort((a,b)=> b.balance - a.balance);
+  res.json({term: targetTerm, class: cls||'All', count: defaulters.length, totalOwed: defaulters.reduce((a,b)=>a+b.balance,0), defaulters});
+});
+app.get('/api/fees/parents-for-defaulters', verify, authorize('fees:read'), (req,res)=>{
+  const {term, class:cls} = req.query;
+  const data = db.prepare('SELECT * FROM students').all(); // fallback to reuse defaulters logic
+  // Reuse same logic but return unique parents
+  const targetTerm = term || 'Term I';
+  let students;
+  if(cls) students = db.prepare('SELECT * FROM students WHERE class=?').all(cls);
+  else students = db.prepare('SELECT * FROM students').all();
+  const parentsMap={};
+  for(const s of students){
+    const fee = db.prepare('SELECT * FROM fees_structure WHERE class=? AND term=?').get(s.class, targetTerm) || db.prepare('SELECT * FROM fees_structure WHERE term=? LIMIT 1').get(targetTerm);
+    const due = fee ? fee.amount : 0;
+    if(due===0) continue;
+    const paid = db.prepare('SELECT COALESCE(SUM(amount),0) as sum FROM payments WHERE student_id=? AND term=?').get(s.id, targetTerm).sum || 0;
+    if(due - paid > 0 && s.parent_phone){
+      const key=s.parent_phone;
+      if(!parentsMap[key]) parentsMap[key]={phone:s.parent_phone, name:s.parent_name||'Parent', children:[], totalOwed:0};
+      parentsMap[key].children.push({admission_no:s.admission_no, name:s.first_name+' '+s.last_name, class:s.class, balance: due - paid});
+      parentsMap[key].totalOwed += (due - paid);
+    }
+  }
+  const parents = Object.values(parentsMap).sort((a,b)=> b.totalOwed - a.totalOwed);
+  res.json({term: targetTerm, class: cls||'All', parents, count: parents.length});
+});
 
 // Dashboard stats
 app.get('/api/dashboard', verify, authorize('dashboard:read'), (req,res)=>{

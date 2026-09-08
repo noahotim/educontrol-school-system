@@ -1062,7 +1062,7 @@ async function downloadPayslipsPDF(){
   for(let i=0;i<Math.min(pays.length,8);i++){ await downloadPayslip(pays[i].id); await new Promise(r=>setTimeout(r,600)); }
 }
 
-// FEES - with Receipt PDF
+// FEES - with Receipt PDF + Defaulters (Easiest Filter)
 async function renderFees(){
   const fees=await apiGet('/api/fees-structure');
   const pays=await apiGet('/api/payments');
@@ -1070,13 +1070,143 @@ async function renderFees(){
   const map={}; students.forEach(s=> map[s.id]=s.first_name+' '+s.last_name+' ('+s.admission_no+') - '+s.class);
   const cmap={}; students.forEach(s=> cmap[s.id]=s);
   $('#content').innerHTML=`
-  <div class="tabs"><button class="tab active" onclick="renderFees()">Payments & Receipts</button><button class="tab" onclick="renderFeesStructure()">Fees Structure</button></div>
-  <div class="toolbar"><button class="btn btn-sm" onclick="openPayModal()"><i class="ri-add-line"></i> Record Payment</button><button class="btn btn-sm btn-outline" onclick="downloadFeesPDF()"><i class="ri-download-line"></i> Fees PDF</button></div>
+  <div class="tabs"><button class="tab active" onclick="renderFees()">Payments & Receipts</button><button class="tab" onclick="renderFeesStructure()">Fees Structure</button><button class="tab" onclick="renderDefaulters()" style="background:#fef3c7; border-color:#f59e0b;"><i class="ri-error-warning-line"></i> Defaulters</button></div>
+  <div class="toolbar"><button class="btn btn-sm" onclick="openPayModal()"><i class="ri-add-line"></i> Record Payment</button><button class="btn btn-sm btn-outline" onclick="downloadFeesPDF()"><i class="ri-download-line"></i> Fees PDF</button><button class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="renderDefaulters()"><i class="ri-filter-3-line"></i> Filter Defaulters</button></div>
   <div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Student</th><th>Amount</th><th>Method</th><th>Term</th><th>Date</th><th>Actions</th></tr></thead><tbody>${pays.map(p=>`<tr><td><b>${p.receipt_no||'-'}</b></td><td>${map[p.student_id]||p.student_id}</td><td><b>${fmtMoney(p.amount)}</b></td><td><span class="badge badge-blue">${p.method||''}</span></td><td>${p.term||''}</td><td>${p.date||''}</td><td style="display:flex; gap:4px;"><button class="btn btn-sm" style="background:#0f172a; padding:5px 8px; font-size:11px;" onclick="downloadReceipt(${p.id})"><i class="ri-receipt-line"></i> Receipt</button><button class="btn btn-sm btn-outline" style="padding:5px 8px;" onclick="previewReceipt(${p.id})">View</button><button class="btn btn-sm btn-danger" style="padding:5px 8px;" onclick="delPay(${p.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
   <div id="receiptPreview" style="margin-top:16px;"></div>`;
   window._studentsForPay=students;
   window._payMap={}; pays.forEach(p=> window._payMap[p.id]=p);
   window._studentMap=cmap;
+}
+async function renderDefaulters(){
+  const classes=await apiGet('/api/classes').catch(()=>[]);
+  $('#content').innerHTML=`
+  <div class="tabs"><button class="tab" onclick="renderFees()">Payments & Receipts</button><button class="tab" onclick="renderFeesStructure()">Fees Structure</button><button class="tab active" style="background:#fef3c7; border-color:#f59e0b;">Defaulters</button></div>
+  <div class="card" style="border:1.5px solid #f59e0b; background:#fffbeb;">
+    <h4><i class="ri-error-warning-line" style="color:#f59e0b;"></i> Easiest Fee Defaulters Filter — Auto-Generate Parents for SMS</h4>
+    <p class="muted" style="margin-top:4px;">Filter by Term & Class → instantly see who owes, how much, and their parent's phone. One click to send fee reminders.</p>
+    <div class="form-grid" style="margin-top:12px;">
+      <div><label>Term</label><select id="def_term" class="input"><option>Term I</option><option>Term II</option><option>Term III</option></select></div>
+      <div><label>Class (or All)</label><select id="def_class" class="input"><option value="">All Classes</option>${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div>
+      <div style="display:flex; gap:8px; align-items:end;"><button class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="filterDefaulters()"><i class="ri-filter-3-line"></i> Filter Defaulters</button><button class="btn btn-sm btn-outline" onclick="filterDefaulters()">Refresh</button></div>
+    </div>
+  </div>
+  <div id="defOut" style="margin-top:16px;"><div class="card" style="text-align:center; padding:30px;"><i class="ri-filter-3-line" style="font-size:28px; color:#f59e0b;"></i><p class="muted" style="margin-top:8px;">Select Term & Class then click <b>Filter Defaulters</b></p></div></div>
+  <div id="defParentPreview" style="margin-top:16px;"></div>`;
+}
+let _defaultersData=[];
+async function filterDefaulters(){
+  const term=document.getElementById('def_term').value, cls=document.getElementById('def_class').value;
+  const btn=document.querySelector('button[onclick="filterDefaulters()"]'); const old=btn?btn.innerHTML:'';
+  if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Filtering…';
+  try{
+    const res=await apiGet(`/api/fees/defaulters?term=${encodeURIComponent(term)}${cls?`&class=${encodeURIComponent(cls)}`:''}`);
+    _defaultersData=res.defaulters;
+    if(!res.defaulters.length){
+      $('#defOut').innerHTML=`<div class="card" style="text-align:center; padding:24px; border:1px solid #bbf7d0; background:#f0fdf4;"><i class="ri-checkbox-circle-line" style="font-size:28px; color:var(--success);"></i><h4 style="margin-top:8px; color:var(--success);">No Defaulters!</h4><p class="muted">All students in ${cls||'all classes'} have cleared fees for ${term}.</p></div>`;
+      return;
+    }
+    const totalOwed=res.totalOwed;
+    $('#defOut').innerHTML=`
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div><h4 style="color:#dc2626;"><i class="ri-error-warning-line"></i> ${res.count} Defaulters • ${cls||'All Classes'} • ${term}</h4><p class="muted">Total Owed: <b style="color:#dc2626;">${fmtMoney(totalOwed)}</b> • Parents to notify: <b>${new Set(res.defaulters.map(d=>d.parent_phone).filter(Boolean)).size}</b></p></div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn btn-sm btn-outline" onclick="toggleDefaulterSelect(true)"><i class="ri-checkbox-line"></i> Select All</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleDefaulterSelect(false)">Deselect</button>
+          <button class="btn btn-sm" style="background:#0f172a;" onclick="generateParentList()"><i class="ri-contacts-line"></i> Parents (${new Set(res.defaulters.map(d=>d.parent_phone).filter(Boolean)).size})</button>
+          <button class="btn btn-sm" style="background:#10b981;" onclick="sendDefaulterSMS()"><i class="ri-message-3-line"></i> Send SMS</button>
+          <button class="btn btn-sm btn-outline" onclick="downloadDefaultersPDF()"><i class="ri-download-line"></i> PDF</button>
+        </div>
+      </div>
+      <div class="table-wrap" style="margin-top:12px; max-height:420px; overflow:auto;">
+        <table><thead><tr><th><input type="checkbox" id="defAll" onchange="toggleDefaulterSelect(this.checked)" checked></th><th>#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Parent</th><th>Phone</th><th style="text-align:right;">Due</th><th style="text-align:right;">Paid</th><th style="text-align:right;">Balance</th><th>Status</th></tr></thead>
+        <tbody>${res.defaulters.map((d,i)=>`<tr><td><input type="checkbox" class="defCheck" data-phone="${d.parent_phone||''}" data-name="${d.parent_name||''}" data-balance="${d.balance}" data-adm="${d.admission_no}" checked></td><td>${i+1}</td><td><b>${d.admission_no}</b></td><td><b>${d.first_name} ${d.last_name}</b></td><td><span class="badge badge-blue">${d.class}</span></td><td>${d.parent_name||'-'}</td><td><b>${d.parent_phone||'-'}</b></td><td style="text-align:right;">${fmtMoney(d.due)}</td><td style="text-align:right;">${fmtMoney(d.paid)}</td><td style="text-align:right; color:#dc2626;"><b>${fmtMoney(d.balance)}</b></td><td><span class="badge ${d.status==='Not Paid'?'badge-red':'badge-amber'}">${d.status}</span></td></tr>`).join('')}</tbody></table>
+      </div>
+      <div class="alert alert-info" style="margin-top:10px;">Tick the parents you want to notify → <b>Parents</b> groups by phone (one SMS per parent even if multiple children) → <b>Send SMS</b> opens pre-filled fee reminder.</div>
+    </div>`;
+  } catch(e){ $('#defOut').innerHTML=`<div class="card" style="border:1px solid #fecaca; background:#fef2f2; padding:16px;"><b style="color:#dc2626;">Error:</b> ${e.message}</div>`; }
+  finally{ if(btn) btn.innerHTML=old; }
+}
+function toggleDefaulterSelect(v){
+  const c=document.getElementById('defAll'); if(typeof v==='boolean'){ if(c) c.checked=v; document.querySelectorAll('.defCheck').forEach(el=>el.checked=v); } else { document.querySelectorAll('.defCheck').forEach(el=>el.checked=c.checked); }
+}
+async function generateParentList(){
+  const checks=[...document.querySelectorAll('.defCheck:checked')];
+  if(!checks.length) return alert('Select at least one defaulter');
+  const map={};
+  checks.forEach(ch=>{
+    const phone=ch.dataset.phone, name=ch.dataset.name, adm=ch.dataset.adm, bal=Number(ch.dataset.balance||0);
+    if(!phone) return;
+    if(!map[phone]) map[phone]={phone, name, children:[], total:0};
+    map[phone].children.push(adm);
+    map[phone].total+=bal;
+  });
+  const parents=Object.values(map).sort((a,b)=>b.total-a.total);
+  $('#defParentPreview').innerHTML=`
+  <div class="card" style="border:1.5px solid #10b981;">
+    <h4><i class="ri-contacts-line" style="color:var(--success)"></i> Generated Parents List — ${parents.length} unique parents</h4>
+    <p class="muted">One SMS per parent (even if multiple children owe). Total to collect from selected: <b style="color:#dc2626;">${fmtMoney(parents.reduce((a,b)=>a+b.total,0))}</b></p>
+    <div class="table-wrap" style="margin-top:10px;"><table><thead><tr><th>#</th><th>Parent</th><th>Phone</th><th>Children (Adm)</th><th style="text-align:right;">Total Owed</th></tr></thead><tbody>${parents.map((p,i)=>`<tr><td>${i+1}</td><td><b>${p.name}</b></td><td><b>${p.phone}</b></td><td>${p.children.join(', ')}</td><td style="text-align:right; color:#dc2626;"><b>${fmtMoney(p.total)}</b></td></tr>`).join('')}</tbody></table></div>
+    <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;"><button class="btn btn-sm" style="background:#10b981;" onclick="sendDefaulterSMS()"><i class="ri-message-3-line"></i> Send SMS to These ${parents.length} Parents</button><button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText('${parents.map(p=>p.phone).join(', ')}'); alert('Phones copied: '+${parents.length}+' numbers')"><i class="ri-clipboard-line"></i> Copy Phones</button><button class="btn btn-sm btn-outline" onclick="downloadDefaultersPDF()"><i class="ri-download-line"></i> Defaulters PDF</button></div>
+  </div>`;
+  document.getElementById('defParentPreview').scrollIntoView({behavior:'smooth'});
+}
+async function sendDefaulterSMS(){
+  const checks=[...document.querySelectorAll('.defCheck:checked')];
+  if(!checks.length) return alert('Select defaulters first — click Filter Defaulters, tick parents, then Send SMS');
+  const term=document.getElementById('def_term')?.value||'Term I';
+  const map={};
+  checks.forEach(ch=>{
+    const phone=ch.dataset.phone, name=ch.dataset.name, adm=ch.dataset.adm, bal=Number(ch.dataset.balance||0);
+    if(!phone) return;
+    if(!map[phone]) map[phone]={phone, name, adms:[], total:0};
+    map[phone].adms.push(adm);
+    map[phone].total+=bal;
+  });
+  const parents=Object.values(map);
+  if(!parents.length) return alert('No phone numbers for selected defaulters');
+  // Pre-fill SMS via existing SMS module logic: open modal with template
+  const template = `Dear Parent, this is a reminder that school fees for ${term} is pending. Your child(ren) owe a balance. Please clear at school or via Mobile Money/Bank. Total balance may be shown per child. Thank you — EduControl Academy.`;
+  // Use existing SMS send flow: store selection and navigate to SMS
+  localStorage.setItem('defaulterParents', JSON.stringify(parents));
+  localStorage.setItem('defaulterTerm', term);
+  if(confirm(`Send fee reminder SMS to ${parents.length} parents?\\n\\nThis will queue:\n${parents.slice(0,3).map(p=>p.phone+' ('+p.name+')').join('\\n')}${parents.length>3?'\\n...and '+(parents.length-3)+' more':''}\\n\\nClick OK to open SMS composer with these parents pre-filled.`)){
+    navigate('sms');
+    setTimeout(()=>{
+      const sel=document.getElementById('sms_group'); if(sel) sel.value='custom';
+      const extra=document.getElementById('smsExtra'); if(extra) extra.innerHTML=`<label>Phone numbers (auto-filled from ${parents.length} defaulter parents)</label><input id="sms_phones" class="input" value="${parents.map(p=>p.phone).join(', ')}">`;
+      const msg=document.getElementById('sms_msg'); if(msg) msg.value=template + `\\n\\nSelected defaulters: ${parents.length} parents, Total owed: ${fmtMoney(parents.reduce((a,b)=>a+b.total,0))}`;
+      document.getElementById('sms_msg')?.scrollIntoView({behavior:'smooth'});
+    },800);
+  }
+}
+function defaultersPDFHTML(res){
+  const dateStr=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  return `<div id="defaultersPrint" class="rc-paper">
+    <div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Fee Defaulters Report • ${res.term} • ${res.class}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${res.count} Defaulters</b><br>Total: ${fmtMoney(res.totalOwed)}<br><span style="font-size:10px;">${dateStr}</span></div></div>
+    <div style="padding:10px 14px; display:flex; justify-content:space-between; background:#fffbeb; border-bottom:1px solid #f59e0b; font-size:11px;"><span>Term: <b>${res.term}</b> • Class: <b>${res.class}</b> • Generated by: <b>${user.name}</b></span><span>Total Owed: <b style="color:#dc2626;">${fmtMoney(res.totalOwed)}</b></span></div>
+    <div style="padding:12px 14px;">
+      <table class="rc-table">
+        <thead><tr><th style="width:28px">#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Parent</th><th>Phone</th><th style="text-align:right;">Due</th><th style="text-align:right;">Paid</th><th style="text-align:right;">Balance</th></tr></thead>
+        <tbody>${res.defaulters.map((d,i)=>`<tr><td>${i+1}</td><td><b>${d.admission_no}</b></td><td>${d.first_name} ${d.last_name}</td><td>${d.class}</td><td>${d.parent_name||'-'}</td><td><b>${d.parent_phone||'-'}</b></td><td style="text-align:right;">${fmtMoney(d.due)}</td><td style="text-align:right;">${fmtMoney(d.paid)}</td><td style="text-align:right; color:#dc2626; font-weight:700;">${fmtMoney(d.balance)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr style="background:#0f172a; color:#fff;"><td colspan=8 style="text-align:right;"><b>TOTAL OWED</b></td><td style="text-align:right;"><b>${fmtMoney(res.totalOwed)}</b></td></tr></tfoot>
+      </table>
+    </div>
+    <div style="padding:10px 14px; background:#f8fafc; border-top:1px dashed #e2e8f0; font-size:10px;"><b>Action:</b> Send SMS reminders to ${new Set(res.defaulters.map(d=>d.parent_phone).filter(Boolean)).size} parents via <b>SMS & Comms</b> → Fee Reminder Template.</div>
+    <div class="rc-sign"><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Bursar</b></div></div><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b></div></div><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Date</b><br><span class="muted">${dateStr}</span></div></div></div>
+  </div>`;
+}
+async function downloadDefaultersPDF(){
+  if(!_defaultersData.length) return alert('Filter defaulters first');
+  const term=document.getElementById('def_term')?.value||'Term I', cls=document.getElementById('def_class')?.value||'All';
+  const res={term, class:cls, count:_defaultersData.length, totalOwed:_defaultersData.reduce((a,b)=>a+b.balance,0), defaulters:_defaultersData};
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=defaultersPDFHTML(res); document.body.appendChild(wrap);
+  const el=wrap.querySelector('#defaultersPrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST'); else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Defaulters_${term}_${cls||'All'}_${today()}_A4.pdf`); document.body.removeChild(wrap);
 }
 function renderFeesStructure(){
   apiGet('/api/fees-structure').then(fees=>{
