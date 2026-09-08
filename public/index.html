@@ -668,7 +668,17 @@ async function createUser(){
   if(!body.username||!body.password) return alert('Username & password required');
   try{ await apiPost('/api/register', body); $('#uMsg').innerHTML='<span style="color:var(--success)">User created</span>'; renderBackup(); }catch(e){ $('#uMsg').textContent=e.message; }
 }
-function backupDB(){ window.location.href='/api/backup'; }
+async function backupDB(){
+  if(!token) return alert('Login first');
+  // Use fetch with auth to download blob (fixes 401 on direct link)
+  try{
+    const r = await fetch('/api/backup?token='+encodeURIComponent(token), {headers: authHeader()});
+    if(!r.ok){ const j=await r.json(); throw new Error(j.error||'Backup failed'); }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=`backup_${today()}.db`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }catch(e){ alert(e.message); window.location.href='/api/backup?token='+encodeURIComponent(token); }
+}
 
 // init
 if(token && user) showApp(); else { $('#loginView').style.display='flex'; }
