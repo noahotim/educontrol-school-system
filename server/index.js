@@ -33,6 +33,16 @@ function maintenanceGuard(req,res,next){
   try{
     const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
     if(m && m.enabled){
+      // Auto-expire if enabled_until passed (admin set a timer)
+      if(m.enabled_until){
+        const until=new Date(m.enabled_until).getTime();
+        if(until && until <= Date.now()){
+          db.prepare('UPDATE maintenance SET enabled=0, enabled_until=NULL WHERE id=1').run();
+          m.enabled=0;
+        }
+      }
+    }
+    if(m && m.enabled){
       const isMaintenanceGet = req.path==='/api/maintenance';
       const isBackupKey = req.path==='/api/backup' && req.query.key;
       if(isMaintenanceGet || isBackupKey) return next();
@@ -514,18 +524,23 @@ app.get('/api/sms/preview-bulk-results', verify, authorize('exams','sms','exams:
 // Maintenance API — admin kill switch
 app.get('/api/maintenance', (req,res)=>{
   const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
-  res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:''});
+  res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:'', enabled_until: m?m.enabled_until:null});
 });
 let _lastToggle=0;
 app.post('/api/maintenance/toggle', verify, authorize('*'), (req,res)=>{
   if(req.user.role!=='admin') return res.status(403).json({error:'Only admin can toggle maintenance'});
   if(Date.now()-_lastToggle < 3000) return res.status(429).json({error:'Too fast — wait 3s between toggles'});
   _lastToggle=Date.now();
-  const {enabled, message}=req.body;
+  const {enabled, message, durationMinutes}=req.body;
   const msg=message||'System under maintenance — please try again later';
-  db.prepare('UPDATE maintenance SET enabled=?, message=?, enabled_by=?, enabled_at=? WHERE id=1').run(enabled?1:0, msg, req.user.username, new Date().toISOString());
-  console.log(`Maintenance ${enabled?'ON':'OFF'} by ${req.user.username} at ${new Date().toISOString()}`);
-  res.json({enabled: !!enabled, message: msg});
+  let until=null;
+  if(enabled && durationMinutes && durationMinutes>0){
+    const d=Math.min(Number(durationMinutes), 24*60);
+    until=new Date(Date.now()+d*60*1000).toISOString();
+  }
+  db.prepare('UPDATE maintenance SET enabled=?, message=?, enabled_by=?, enabled_at=?, enabled_until=? WHERE id=1').run(enabled?1:0, msg, req.user.username, new Date().toISOString(), until);
+  console.log(`Maintenance ${enabled?'ON':'OFF'} by ${req.user.username} at ${new Date().toISOString()}${until?' auto-off '+until:''}`);
+  res.json({enabled: !!enabled, message: msg, enabled_until: until});
 });
 // Scalable school levels — P1-P7 now, S1-S6 ready (100% secure, upgradable)
 app.get('/api/settings/school', (req,res)=>{

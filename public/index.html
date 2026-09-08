@@ -2050,7 +2050,15 @@ function renderBackup(){
         <button class="btn btn-sm btn-outline" onclick="loadMaintenance()"><i class="ri-refresh-line"></i> Refresh</button>
       </div>
       <div style="margin-top:8px;"><label>Maintenance Message</label><input id="maintMsg" class="input" value="System under maintenance — please try again later" placeholder="Message shown to users"></div>
-      <div class="alert" style="margin-top:10px; background:#fef2f2; border:1px solid #fecaca; color:#991b1b; font-size:11px;"><b>When ON:</b> All non-admin (teacher/bursar/nurse) get <code>503 Maintenance</code> + message. Admin can still login and disable.</div>
+      <div style="margin-top:8px;"><label>Auto-Disable After (optional — prevents lockout)</label><select id="maintDuration" class="input">
+        <option value="">Until I disable manually</option>
+        <option value="5">5 minutes</option>
+        <option value="15">15 minutes</option>
+        <option value="30">30 minutes</option>
+        <option value="60">1 hour</option>
+        <option value="360">6 hours</option>
+      </select></div>
+      <div class="alert" style="margin-top:10px; background:#fef2f2; border:1px solid #fecaca; color:#991b1b; font-size:11px;"><b>When ON:</b> All non-admin (teacher/bursar/nurse) get <code>503 Maintenance</code> + message. Admin can still login and disable. <b>Tip:</b> pick an auto-off time so the system unlocks itself — no lockouts if you forget.</div>
       <h4 style="margin-top:16px;"><i class="ri-scales-3-line"></i> Scalability — P1-P7 Now, S1-S6 Ready</h4>
       <div id="schoolLevelBox" class="muted">Loading…</div>
       <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
@@ -2072,7 +2080,11 @@ async function loadMaintenance(){
   try{
     const m=await fetch('/api/maintenance').then(r=>r.json());
     const el=document.getElementById('maintStatus');
-    if(el) el.innerHTML= m.enabled ? `<span class="badge badge-red">ON — Maintenance Active</span> <span class="muted">by ${m.enabled_by||'-'} at ${m.enabled_at?new Date(m.enabled_at).toLocaleString():''}</span><br><span style="font-size:11px; color:#991b1b;">Message: "${m.message}"</span>` : `<span class="badge badge-green">OFF — System Live</span> <span class="muted">All roles can access</span>`;
+    if(el){
+      let untilTxt='';
+      if(m.enabled && m.enabled_until){ const mins=Math.max(0,Math.round((new Date(m.enabled_until)-Date.now())/60000)); untilTxt=`<br><span style="font-size:11px; color:#b45309;"><i class="ri-time-line"></i> Auto-disables in ${mins} min (${new Date(m.enabled_until).toLocaleTimeString()})</span>`; }
+      el.innerHTML= m.enabled ? `<span class="badge badge-red">ON — Maintenance Active</span> <span class="muted">by ${m.enabled_by||'-'} at ${m.enabled_at?new Date(m.enabled_at).toLocaleString():''}</span><br><span style="font-size:11px; color:#991b1b;">Message: "${m.message}"</span>${untilTxt}` : `<span class="badge badge-green">OFF — System Live</span> <span class="muted">All roles can access</span>`;
+    }
     const msg=document.getElementById('maintMsg');
     if(msg && m.message) msg.value=m.message;
   } catch(e){ const el=document.getElementById('maintStatus'); if(el) el.textContent='Failed to load: '+e.message; }
@@ -2084,14 +2096,16 @@ async function toggleMaintenance(enable){
     return alert(`Please wait ${sec}s — kill switch on cooldown to prevent flicker.`);
   }
   const message=document.getElementById('maintMsg')?.value||'System under maintenance — please try again later';
+  const durationMinutes=enable ? Number(document.getElementById('maintDuration')?.value||0) : 0;
   const verb=enable?'ENABLE':'DISABLE';
-  if(!confirm(`${verb} HARD maintenance? ${enable?'All non-admin (teacher/bursar/nurse/subject_teacher/class_teacher) will be instantly HARD locked (503, cannot login, signed out). Only admin stays online.':'System will be live for all roles.'} Continue?`)) return;
+  const timerTxt=durationMinutes?` This will AUTO-DISABLE in ${durationMinutes} min.`:' It stays ON until disabled manually.';
+  if(!confirm(`${verb} HARD maintenance? ${enable?'All non-admin (teacher/bursar/nurse/subject_teacher/class_teacher) will be instantly HARD locked (503, cannot login, signed out). Only admin stays online.':'System will be live for all roles.'} ${timerTxt} Continue?`)) return;
   _maintCooldown=true; _lastToggleTime=Date.now();
   const btn=document.querySelector(`button[onclick="toggleMaintenance(${enable})"]`);
   const old=btn?btn.innerHTML:'';
   if(btn){ btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Switching…'; }
   try{
-    const res=await apiPost('/api/maintenance/toggle', {enabled: enable, message});
+    const res=await apiPost('/api/maintenance/toggle', {enabled: enable, message, durationMinutes});
     // Show success with auto-refresh
     const toast=document.createElement('div');
     toast.style.cssText='position:fixed; top:20px; right:20px; background:'+(enable?'#fef2f2':'#f0fdf4')+'; border:1px solid '+(enable?'#fecaca':'#bbf7d0')+'; color:'+(enable?'#991b1b':'#166534')+'; padding:12px 16px; border-radius:10px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,.15); font-size:13px;';
@@ -2137,29 +2151,36 @@ async function checkMaintenance(){
     if(m.enabled){
       const isAdmin = user && user.role==='admin';
       if(!isAdmin){
-        // HARD: instant logout + hard block
+        // HARD: instant logout + hard block (only if there WAS a live session)
         if(token || user){
           localStorage.clear(); token=null; user=null;
           document.getElementById('appView').style.display='none';
           document.getElementById('loginView').style.display='none';
         }
         document.getElementById('maintOverlayMsg').innerHTML=`<b style="color:#991b1b;">HARD MAINTENANCE — SYSTEM LOCKED</b><br>${m.message||'System under HARD maintenance — only admin can login'}`;
-        document.getElementById('maintOverlayBy').textContent=m.enabled_by?`Enabled by ${m.enabled_by} at ${new Date(m.enabled_at).toLocaleString()} — only admin can disable`:'';
-        // Make overlay hard: no close, only admin login
-        overlay.style.display='flex';
-        overlay.onclick=null;
-        // Update login card to show hard message
+        document.getElementById('maintOverlayBy').textContent=m.enabled_by?`Enabled by ${m.enabled_by} at ${new Date(m.enabled_at).toLocaleString()} — only admin can disable`+(m.enabled_until?` • auto-off ${new Date(m.enabled_until).toLocaleTimeString()}`:'')+'':'';
+        // Banner shown on login card either way (admin CAN login to disable)
         const loginCard=document.querySelector('.login-card');
         if(loginCard && !document.getElementById('hardLoginMsg')){
           const d=document.createElement('div');
           d.id='hardLoginMsg';
           d.className='alert';
           d.style.cssText='background:#fef2f2; border:1px solid #fecaca; color:#991b1b; margin-top:10px; font-size:12px;';
-          d.innerHTML=`<b><i class="ri-alarm-warning-line"></i> HARD LOCK:</b> Only <b>admin</b> can login now. All other roles blocked (503).`;
+          d.innerHTML=m.enabled_until?`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b> — auto-off at <b>${new Date(m.enabled_until).toLocaleTimeString()}</b>.<br>Only <b>admin</b> can sign in to disable it now.`:`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b><br>Only <b>admin</b> can sign in to disable it now. Other accounts are blocked.`;
           loginCard.appendChild(d);
         }
-        // Show login view for admin to login
-        if(!user) document.getElementById('loginView').style.display='flex';
+        document.getElementById('username').value=!user?'admin':document.getElementById('username').value;
+        if(!token && !user){
+          // Already signed out: show login normally — no scary overlay
+          overlay.style.display='none';
+          document.getElementById('loginView').style.display='flex';
+        } else {
+          // Live non-admin session: hard overlay
+          overlay.style.display='flex';
+          overlay.onclick=null;
+          appView.style.display='none';
+          loginView.style.display='none';
+        }
       } else {
         overlay.style.display='none';
         const hardMsg=document.getElementById('hardLoginMsg');
