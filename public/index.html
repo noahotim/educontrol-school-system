@@ -239,13 +239,18 @@ function renderNav(){
   // show role badge
   const rb = document.getElementById('userRole'); if(rb) rb.innerHTML = user.role + (user.role==='admin'? ' | Full Access' : user.role==='bursar'? ' | Finance' : user.role==='teacher'? ' | Academic' : user.role==='nurse'? ' | Medical' : user.role==='headteacher'?' | Head Teacher':'');
 }
-function navigate(id){
+function navigate(id, pushHash=true){
   const item = navItems.find(n=>n.id===id);
   if(item && !canAccess(item.perm)){
     $('#content').innerHTML=`<div class="card" style="text-align:center; padding:40px;"><i class="ri-lock-2-line" style="font-size:36px; color:var(--danger)"></i><h3 style="margin-top:10px;">Access Denied</h3><p class="muted" style="margin-top:6px;">Your role <b>${user.role}</b> cannot access <b>${item.label}</b>.</p><p class="muted">Allowed for: ${Object.entries(ROLES).filter(([r,perms])=> perms.includes(item.perm) || perms.includes(item.perm.split(':')[0]) || perms.includes('*')).map(([r])=>r).join(', ') || 'admin only'}</p><button class="btn btn-sm" style="margin-top:12px;" onclick="navigate('dashboard')">Back to Dashboard</button></div>`;
     document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
     $('#pageTitle').textContent = item.label + ' - Restricted';
     return;
+  }
+  // persist tab for refresh + URL hash for back/forward
+  try{ localStorage.setItem('lastTab', id); }catch(e){}
+  if(pushHash) {
+    try{ history.replaceState(null,'','#'+id); }catch(e){ location.hash=id; }
   }
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   const el=document.getElementById('nav-'+id); if(el) el.classList.add('active');
@@ -254,6 +259,10 @@ function navigate(id){
   (map[id]||renderDashboard)();
   if(window.innerWidth<700) $('#sidebar').classList.remove('open');
 }
+window.addEventListener('hashchange', ()=>{
+  const h=(location.hash||'').replace('#','').trim();
+  if(h && user && canAccess((navItems.find(n=>n.id===h)||{}).perm||h)) navigate(h, false);
+});
 function toggleSidebar(){ $('#sidebar').classList.toggle('open'); }
 
 // AUTH — hard maintenance: only admin can login when locked
@@ -295,7 +304,15 @@ function showApp(){
   if(!token){ $('#loginView').style.display='flex'; $('#appView').style.display='none'; return;}
   $('#loginView').style.display='none'; $('#appView').style.display='flex';
   $('#userName').textContent=user.name||user.username; $('#userRole').textContent=user.role; $('#userAvatar').src=`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name||user.username)}&background=1e40af&color=fff`;
-  renderNav(); navigate('dashboard'); $('#todayStr').textContent=new Date().toDateString();
+  renderNav();
+  // Stay on last tab after refresh — not always dashboard
+  let last = (location.hash||'').replace('#','').trim();
+  if(!last) try{ last=localStorage.getItem('lastTab')||'dashboard'; }catch(e){ last='dashboard'; }
+  // Validate role can access
+  const item=navItems.find(n=>n.id===last);
+  if(!item || !canAccess(item.perm)) last='dashboard';
+  navigate(last);
+  $('#todayStr').textContent=new Date().toDateString();
   if(window.innerWidth<700) $('#menuBtn').style.display='inline-flex';
 }
 let _apiCache={}; let _cacheTime={};
