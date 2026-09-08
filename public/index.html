@@ -931,7 +931,7 @@ async function downloadAllPDFs(){
   }
 }
 
-// AI TUTOR
+// AI TUTOR — with Filtered Performance Analytics + PDF
 function renderAITutor(){
   $('#content').innerHTML=`
   <div class="grid grid2">
@@ -941,11 +941,27 @@ function renderAITutor(){
       <button class="btn btn-sm" style="margin-top:10px" onclick="askAI()">Ask AI Tutor</button>
       <div id="aiAns" style="margin-top:12px"></div>
     </div>
-    <div class="card"><h4>Performance Analysis</h4><div id="perfOut" class="muted">Select student on left or view class analytics below.</div>
-      <button class="btn btn-sm btn-outline" style="margin-top:10px" onclick="loadPerf()">Load Class Analytics</button><div id="perfChartWrap" style="margin-top:12px"><canvas id="perfChart" height="160"></canvas></div>
+    <div class="card">
+      <h4><i class="ri-bar-chart-line"></i> Performance Analysis — Filtered</h4>
+      <p class="muted" style="font-size:11px; margin:4px 0 8px;">Filter by field — PDF shows <b>only selected field</b>.</p>
+      <div class="form-grid" style="gap:8px;">
+        <div><label>Class</label><select id="perfClass" class="input"><option value="">All Classes</option></select></div>
+        <div><label>Subject</label><select id="perfSubject" class="input"><option value="">All Subjects</option></select></div>
+        <div><label>Exam</label><select id="perfExam" class="input"><option value="">All Exams</option></select></div>
+        <div style="display:flex; gap:6px; align-items:end;"><button class="btn btn-sm" onclick="loadPerf()"><i class="ri-filter-3-line"></i> Load</button><button class="btn btn-sm btn-outline" onclick="downloadPerfPDF()"><i class="ri-download-line"></i> PDF (A4)</button></div>
+      </div>
+      <div id="perfOut" class="muted" style="margin-top:10px;">Select filters and click Load — or Load for overall.</div>
+      <div id="perfChartWrap" style="margin-top:12px"><canvas id="perfChart" height="160"></canvas></div>
+      <div id="perfDetails" style="margin-top:10px;"></div>
     </div>
   </div>`;
   apiGet('/api/students').then(list=>{ const s=$('#ai_stu'); list.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.first_name+' '+st.last_name+' ('+st.class+')'; s.appendChild(o); }); });
+  // Populate filters
+  Promise.all([apiGet('/api/classes').catch(()=>[]), apiGet('/api/subjects').catch(()=>[]), apiGet('/api/exams').catch(()=>[])]).then(([classes, subjects, exams])=>{
+    const cSel=document.getElementById('perfClass'); if(cSel) classes.forEach(c=>{ const o=document.createElement('option'); o.value=c.name; o.textContent=c.name; cSel.appendChild(o); });
+    const sSel=document.getElementById('perfSubject'); if(sSel) subjects.forEach(s=>{ const o=document.createElement('option'); o.value=s.name; o.textContent=s.name; sSel.appendChild(o); });
+    const eSel=document.getElementById('perfExam'); if(eSel) exams.forEach(e=>{ const o=document.createElement('option'); o.value=e.id; o.textContent=`${e.name} • ${e.class} • ${e.term}`; eSel.appendChild(o); });
+  });
 }
 async function askAI(){
   const question=$('#ai_q').value.trim(); if(!question) return alert('Type a question');
@@ -953,40 +969,98 @@ async function askAI(){
   const r=await apiPost('/api/ai-tutor',{question, student_id: $('#ai_stu').value||undefined});
   $('#aiAns').innerHTML=`<div class="card" style="background:#f0f9ff;border-color:#bfdbfe"><b>AI Tutor:</b><p style="margin-top:6px;white-space:pre-wrap">${r.answer}</p></div>`;
 }
+let _perfCache={labels:[],data:[],rows:[],filters:{}};
 async function loadPerf(){
   const btn=document.querySelector('button[onclick="loadPerf()"]');
   const old=btn?btn.innerHTML:'';
   if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Loading…';
-  $('#perfOut').innerHTML='<span class="muted"><i class="ri-loader-4-line"></i> Fetching results for analytics…</span>';
+  const cls=document.getElementById('perfClass')?.value||'', subj=document.getElementById('perfSubject')?.value||'', examId=document.getElementById('perfExam')?.value||'';
+  const filterText = [cls?`Class ${cls}`:'', subj?`Subject ${subj}`:'', examId?`Exam #${examId}`:''].filter(Boolean).join(' • ') || 'All Data (Overall)';
+  $('#perfOut').innerHTML=`<span class="muted"><i class="ri-loader-4-line"></i> Fetching results for <b>${filterText}</b>…</span>`;
   try{
-    const rows=await apiGet('/api/results');
+    let rows=await apiGet('/api/results');
+    if(examId) rows=rows.filter(r=> String(r.exam_id)===String(examId));
+    if(cls) rows=rows.filter(r=> r.class===cls);
+    if(subj) rows=rows.filter(r=> r.subject===subj);
+    _perfCache={labels:[],data:[],rows, filters:{cls,subj,examId, filterText}};
     if(!rows || rows.length===0){
-      $('#perfOut').innerHTML='<div class="alert" style="background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>No results yet.</b> Enter exams & results in <b>Exams & Results</b> first, then click <b>Load Class Analytics</b> again.<br><span class="muted">Tip: Go to Exams → Create Exam → Enter Results (e.g., 5 students, Mathematics 75, 82...)</span></div>';
+      $('#perfOut').innerHTML=`<div class="alert" style="background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>No results for selected field.</b><br>Filter: <b>${filterText}</b> — 0 results.<br><span class="muted">Try <b>All Classes / All Subjects / All Exams</b> or enter results in <b>Exams & Results</b> first.</span></div><div style="margin-top:8px;"><button class="btn btn-sm btn-outline" onclick="document.getElementById('perfClass').value='';document.getElementById('perfSubject').value='';document.getElementById('perfExam').value='';loadPerf()">Clear Filters & Load All</button></div>`;
+      const ctx=document.getElementById('perfChart'); if(ctx && window._perfChart) try{ window._perfChart.destroy(); }catch(e){}
+      document.getElementById('perfDetails').innerHTML='';
       if(btn) btn.innerHTML=old;
       return;
     }
     const bySub={}; rows.forEach(r=>{ if(!r.subject) return; if(!bySub[r.subject]) bySub[r.subject]={sum:0,n:0}; bySub[r.subject].sum+=Number(r.marks||0); bySub[r.subject].n++; });
     const labels=Object.keys(bySub), data=labels.map(k=> (bySub[k].sum/bySub[k].n).toFixed(1));
     const overall = labels.length ? (data.reduce((a,b)=>a+Number(b),0)/data.length).toFixed(1) : '0';
-    // Also compute top students and grade distribution for extras
+    _perfCache.labels=labels; _perfCache.data=data;
     const byStudent={}; rows.forEach(r=>{ const key=r.first_name+' '+r.last_name+' ('+r.class+')'; if(!byStudent[key]) byStudent[key]=[]; byStudent[key].push(Number(r.marks)); });
     const studentAvgs=Object.entries(byStudent).map(([k,arr])=>({name:k, avg:(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1)})).sort((a,b)=>b.avg-a.avg).slice(0,5);
+    const byClass={}; rows.forEach(r=>{ if(!byClass[r.class]) byClass[r.class]={sum:0,n:0}; byClass[r.class].sum+=Number(r.marks); byClass[r.class].n++; });
+    const classAvgs=Object.entries(byClass).map(([k,v])=>({cls:k, avg:(v.sum/v.n).toFixed(1)})).sort((a,b)=>b.avg-a.avg);
     $('#perfOut').innerHTML=`
       <div style="display:grid; gap:8px;">
-        <div><b>Overall Average:</b> <span style="color:var(--success); font-weight:800;">${overall}%</span> • <span class="muted">${rows.length} results • ${labels.length} subjects</span></div>
+        <div><b>Filtered:</b> <span class="badge badge-blue">${filterText}</span> <span class="muted">• ${rows.length} results • ${labels.length} subjects</span></div>
+        <div><b>Overall Average (filtered):</b> <span style="color:var(--success); font-weight:800;">${overall}%</span> • <span class="muted">Only selected field</span></div>
         <div style="display:flex; flex-wrap:wrap; gap:6px;">${labels.map((k,i)=>`<span class="badge ${Number(data[i])>=60?'badge-green':Number(data[i])>=40?'badge-amber':'badge-red'}" style="font-size:11px; padding:4px 8px;">${k}: ${data[i]}%</span>`).join('')}</div>
-        ${studentAvgs.length?`<div style="margin-top:6px;"><b>Top 5 Students:</b><br><span class="muted" style="font-size:11px;">${studentAvgs.map(s=>`${s.name} <b>${s.avg}%</b>`).join(' | ')}</span></div>`:''}
-        <div style="margin-top:4px; font-size:11px; color:var(--muted);">Chart: Average score per subject (green = good). Hover for values.</div>
+        ${studentAvgs.length?`<div style="margin-top:6px;"><b>Top 5 Students (filtered):</b><br><span class="muted" style="font-size:11px;">${studentAvgs.map(s=>`${s.name} <b>${s.avg}%</b>`).join(' | ')}</span></div>`:''}
+        ${classAvgs.length>1?`<div><b>By Class (filtered):</b> <span class="muted" style="font-size:11px;">${classAvgs.map(c=>`${c.cls} ${c.avg}%`).join(' | ')}</span></div>`:''}
       </div>`;
+    $('#perfDetails').innerHTML=`<div class="card" style="margin-top:8px; background:#f8fafc; border:1px dashed #cbd5e1; padding:10px; font-size:11px;"><b>PDF will include ONLY:</b> <span class="badge badge-blue">${filterText}</span> — ${rows.length} results, ${labels.length} subjects, overall ${overall}%<br><span class="muted">Use <b>Download PDF (A4)</b> to export this filtered view.</span></div>`;
     const ctx=document.getElementById('perfChart');
     if(ctx){
-      // Destroy previous chart if exists
       if(window._perfChart) try{ window._perfChart.destroy(); }catch(e){}
-      window._perfChart=new Chart(ctx,{type:'bar', data:{labels, datasets:[{label:'Avg %', data, backgroundColor: labels.map(v=> Number(v)>=60?'#10b981': Number(v)>=40?'#f59e0b':'#ef4444'), borderColor:'#0f172a', borderWidth:1}]}, options:{responsive:true, plugins:{legend:{display:false}, tooltip:{callbacks:{label: ctx=> ctx.parsed.y+'%'}}}, scales:{y:{beginAtZero:true, max:100, ticks:{callback:v=>v+'%'}}}}});
+      window._perfChart=new Chart(ctx,{type:'bar', data:{labels, datasets:[{label:'Avg % ('+filterText+')', data, backgroundColor: data.map(v=> Number(v)>=60?'#10b981': Number(v)>=40?'#f59e0b':'#ef4444'), borderColor:'#0f172a', borderWidth:1}]}, options:{responsive:true, plugins:{legend:{display:false}, tooltip:{callbacks:{label: ctx=> ctx.label+': '+ctx.parsed.y+'%'}}}, scales:{y:{beginAtZero:true, max:100, ticks:{callback:v=>v+'%'}}}}});
     }
   } catch(e){
     $('#perfOut').innerHTML=`<div class="alert" style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b;"><b>Failed to load analytics:</b> ${e.message}<br><span class="muted" style="font-size:11px;">Your role <b>${user.role}</b> needs <b>exams:read</b> or <b>aitutor:read</b>. Current: ${(ROLES[user.role]||[]).join(', ')}</span><br><button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="loadPerf()">Retry</button></div>`;
   } finally{ if(btn) btn.innerHTML=old; }
+}
+async function downloadPerfPDF(){
+  if(!_perfCache.rows || !_perfCache.rows.length) return alert('Load analytics first — select a field and click Load, then PDF will show ONLY that field.');
+  const {labels, data, rows, filters} = _perfCache;
+  const filterText=filters.filterText||'All Data';
+  const overall = labels.length ? (data.reduce((a,b)=>a+Number(b),0)/labels.length).toFixed(1) : '0';
+  const dateStr=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  // Build HTML for PDF — only filtered data
+  const byStudent={}; rows.forEach(r=>{ const k=r.first_name+' '+r.last_name+' ('+r.class+' • '+r.admission_no+')'; if(!byStudent[k]) byStudent[k]=[]; byStudent[k].push(r.marks); });
+  const topStudents=Object.entries(byStudent).map(([k,arr])=>({name:k, avg:(arr.reduce((a,b)=>a+Number(b),0)/arr.length).toFixed(1), count:arr.length})).sort((a,b)=>b.avg-a.avg).slice(0,10);
+  const html=`
+  <div id="perfPrint" class="rc-paper">
+    <div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Academic Performance Analytics • Filtered Report</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${filterText}</b><br>${rows.length} results<br><span style="font-size:10px;">${dateStr}</span></div></div>
+    <div style="padding:10px 14px; display:flex; justify-content:space-between; background:#f0fdf4; border-bottom:1px solid #10b981; font-size:11px;"><span>Filter: <b>${filterText}</b> • Prepared by: <b>${user.name}</b> <span class="badge badge-blue">${user.role}</span></span><span>Overall: <b style="color:#10b981; font-size:13px;">${overall}%</b></span></div>
+    <div style="padding:12px 14px;">
+      <h4 style="font-size:12px; font-weight:800; color:#0f172a; border-left:4px solid #10b981; padding-left:8px;">Subject Averages — Only Selected Field</h4>
+      <table class="rc-table" style="margin-top:8px;"><thead><tr><th>#</th><th>Subject</th><th style="text-align:center;">Entries</th><th style="text-align:center;">Average</th><th>Status</th></tr></thead><tbody>${labels.map((l,i)=>`<tr><td>${i+1}</td><td><b>${l}</b></td><td style="text-align:center;">${rows.filter(r=>r.subject===l).length}</td><td style="text-align:center;"><b>${data[i]}%</b></td><td style="text-align:center;"><span class="badge ${Number(data[i])>=60?'badge-green':Number(data[i])>=40?'badge-amber':'badge-red'}">${Number(data[i])>=60?'Good':Number(data[i])>=40?'Fair':'Weak'}</span></td></tr>`).join('')}</tbody><tfoot><tr style="background:#0f172a; color:#fff;"><td colspan=3 style="text-align:right;"><b>OVERALL (FILTERED)</b></td><td style="text-align:center;"><b>${overall}%</b></td><td></td></tr></tfoot></table>
+    </div>
+    <div style="padding:0 14px;">
+      <h4 style="font-size:11px; font-weight:800; color:#0f172a;">Top Students — Filtered Field Only</h4>
+      <table class="rc-table" style="margin-top:6px;"><thead><tr><th>#</th><th>Student</th><th style="text-align:center;">Subjects</th><th style="text-align:center;">Avg</th></tr></thead><tbody>${topStudents.map((s,i)=>`<tr><td>${i+1}</td><td>${s.name}</td><td style="text-align:center;">${s.count}</td><td style="text-align:center;"><b>${s.avg}%</b></td></tr>`).join('') || `<tr><td colspan=4 style="text-align:center;" class="muted">No student data for this filter</td></tr>`}</tbody></table>
+    </div>
+    <div style="padding:10px 14px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px;">
+      <div class="rc-kpi"><div class="muted">Results</div><div class="v">${rows.length}</div><div class="muted" style="font-size:8px;">Filtered only</div></div>
+      <div class="rc-kpi"><div class="muted">Subjects</div><div class="v">${labels.length}</div><div class="muted" style="font-size:8px;">In filter</div></div>
+      <div class="rc-kpi"><div class="muted">Overall</div><div class="v" style="color:#10b981;">${overall}%</div><div class="muted" style="font-size:8px;">Filtered avg</div></div>
+    </div>
+    <div class="rc-scale">Filtered view — shows <b>only ${filterText}</b>. Change filters and reload to see different field. • EduControl Analytics</div>
+    <div class="rc-sign"><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Class Teacher</b></div></div><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b></div></div><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Date</b><br><span class="muted">${dateStr}</span></div></div></div>
+  </div>`;
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=html; document.body.appendChild(wrap);
+  const el=wrap.querySelector('#perfPrint');
+  // Capture chart as image and inject
+  try{
+    const chartCanvas=document.getElementById('perfChart');
+    if(chartCanvas){
+      const chartImg=chartCanvas.toDataURL('image/png');
+      const imgEl=document.createElement('img'); imgEl.src=chartImg; imgEl.style.width='100%'; imgEl.style.maxHeight='140px'; imgEl.style.objectFit='contain'; imgEl.style.border='1px solid #e2e8f0'; imgEl.style.borderRadius='8px'; imgEl.style.marginTop='8px';
+      const container=el.querySelector('.rc-table').parentElement;
+      container.appendChild(imgEl);
+    }
+  } catch(e){}
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST'); else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Performance_${filterText.replace(/[^A-Za-z0-9]/g,'_')}_${today()}_A4.pdf`); document.body.removeChild(wrap);
 }
 
 // STAFF — with ID Card + List PDF
