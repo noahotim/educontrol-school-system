@@ -9,6 +9,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qr-creator/dist/qr-creator.min.js"></script>
 <style>
 :root{--primary:#1e40af;--primary2:#3b82f6;--accent:#f59e0b;--bg:#f1f5f9;--card:#fff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--success:#10b981;--danger:#ef4444}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -383,18 +385,89 @@ async function renderDashboard(){
   },100);
 }
 
-// STUDENTS
+// STUDENTS — with ID Cards + QR + Bursar fix
 async function renderStudents(){
-  const students=await apiGet('/api/students');
-  const classes=await apiGet('/api/classes');
+  let students=[], classes=[];
+  try{ students=await apiGet('/api/students'); } catch(e){ $('#content').innerHTML=`<div class="card" style="text-align:center; padding:30px;"><i class="ri-lock-2-line" style="font-size:32px; color:var(--danger)"></i><h4>Access Denied</h4><p class="muted">${e.message}</p></div>`; return; }
+  try{ classes=await apiGet('/api/classes'); } catch(e){ classes=[]; }
+  const canWrite = canAccess('students');
+  const canID = canAccess('students:read');
   $('#content').innerHTML=`
-  <div class="toolbar">
+  <div class="toolbar" style="flex-wrap:wrap;">
     <div class="search"><i class="ri-search-line"></i><input id="stuQ" placeholder="Search name, admission no, class..." oninput="filterStudents()"></div>
-    <button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit Student</button>
+    ${canWrite?`<button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit Student</button>`:``}
     <button class="btn btn-sm btn-outline" onclick="exportStudentsCSV()">Export CSV</button>
+    ${canID?`<button class="btn btn-sm btn-outline" onclick="downloadStudentsPDF()"><i class="ri-download-line"></i> List PDF</button><button class="btn btn-sm btn-outline" onclick="downloadAllStudentCardsPDF()"><i class="ri-contacts-line"></i> ID Cards PDF</button>`:``}
   </div>
-  <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th></th></tr></thead><tbody id="stuBody">${students.map(s=>`<tr data-q="${(s.first_name+' '+s.last_name+' '+s.admission_no+' '+s.class).toLowerCase()}"><td>${s.admission_no}</td><td><b>${s.first_name} ${s.last_name}</b><div class="muted" style="font-size:11px">${s.dob||''}</div></td><td><span class="badge badge-blue">${s.class||'-'}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="openStudentModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delStudent(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
-  <div class="muted" style="margin-top:8px">${students.length} students | Classes: ${classes.map(c=>c.name).join(', ')}</div>`;
+  <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th>Actions</th></tr></thead><tbody id="stuBody">${students.map(s=>`<tr data-q="${(s.first_name+' '+s.last_name+' '+s.admission_no+' '+s.class).toLowerCase()}"><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b><div class="muted" style="font-size:11px">${s.dob||''}</div></td><td><span class="badge badge-blue">${s.class||'-'}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td style="display:flex; gap:4px; flex-wrap:wrap;">${canID?`<button class="btn btn-sm" style="padding:4px 8px; font-size:11px; background:#0f172a;" onclick="downloadStudentCard(${s.id})"><i class="ri-id-card-line"></i> ID</button>`:``}${canWrite?`<button class="btn btn-sm btn-outline" style="padding:4px 8px;" onclick="openStudentModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" style="padding:4px 8px;" onclick="delStudent(${s.id})">Del</button>`: `<span class="muted" style="font-size:11px; align-self:center;">View only</span>`}</td></tr>`).join('')}</tbody></table></div>
+  <div class="muted" style="margin-top:8px">${students.length} students ${classes.length?`| Classes: ${classes.map(c=>c.name).join(', ')}`:``} ${!canWrite?`<span class="badge badge-amber" style="margin-left:6px;">Bursar: View only — no edit/delete</span>`:``}</div>
+  <div id="studentCardPreview" style="margin-top:16px;"></div>`;
+}
+function studentCardHTML(s){
+  const qrData = encodeURIComponent(`https://educontrol-gif2.onrender.com/verify?adm=${s.admission_no}&name=${s.first_name} ${s.last_name}&class=${s.class}`);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${qrData}`;
+  return `<div id="studentCardPrint" style="width:86mm; height:54mm; border:1.5px solid #0f172a; border-radius:10px; overflow:hidden; background:#fff; font-family:Inter,sans-serif; display:flex;">
+    <div style="width:34mm; background:linear-gradient(180deg,#1e40af 0%,#06b6d4 100%); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px; text-align:center;">
+      <div style="width:44px; height:44px; border-radius:50%; background:#fff; color:#1e40af; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800;">${s.first_name[0]}${s.last_name[0]}</div>
+      <div style="margin-top:6px; font-size:6.5px; font-weight:700; letter-spacing:.07em;">EDUCONTROL</div><div style="font-size:6px; opacity:.9;">STUDENT ID</div>
+      <div style="margin-top:6px; background:rgba(255,255,255,.15); padding:2px 6px; border-radius:999px; font-size:6px; font-weight:700;">${s.admission_no}</div>
+      <div style="margin-top:6px; background:#fff; padding:2px; border-radius:4px;"><img src="${qrUrl}" style="width:48px; height:48px; display:block;" crossorigin="anonymous"></div>
+      <div style="font-size:5px; margin-top:2px; opacity:.8;">Scan to verify</div>
+    </div>
+    <div style="flex:1; padding:8px 10px; display:flex; flex-direction:column; justify-content:space-between;">
+      <div><div style="font-size:11px; font-weight:800; color:#0f172a; line-height:1.1;">${s.first_name} ${s.last_name}</div><div style="font-size:8px; color:#1e40af; font-weight:700; margin-top:2px;">${s.class||'-'} • ${s.gender||''} • ${s.dob||''}</div><div style="margin-top:6px; font-size:7.5px; color:#334155; line-height:1.4;"><div><span class="muted">Adm:</span> <b>${s.admission_no}</b> • <span class="muted">DOB:</span> ${s.dob||'-'}</div><div><span class="muted">Parent:</span> ${s.parent_name||'-'}</div><div><span class="muted">Phone:</span> <b>${s.parent_phone||'-'}</b></div><div><span class="muted">Addr:</span> ${(s.address||'-').slice(0,28)}</div></div></div>
+      <div style="display:flex; justify-content:space-between; align-items:end; border-top:1px dashed #e2e8f0; padding-top:6px;"><div style="font-size:6px; color:#94a3b8;">Valid ${new Date().getFullYear()}-${new Date().getFullYear()+1}<br><b style="color:#0f172a;">${s.status}</b></div><div style="text-align:center;"><div style="width:48px; height:20px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:5px; color:#94a3b8;">QR Login</div><div style="width:50px; border-top:1px solid #0f172a; margin-top:3px; font-size:6px; color:#64748b; text-align:center;">Head Teacher</div></div></div>
+    </div>
+  </div>`;
+}
+function studentProfileHTML(s){
+  const qrData = encodeURIComponent(`STUDENT:${s.admission_no}|${s.first_name} ${s.last_name}|${s.class}|${s.parent_phone||''}`);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${qrData}`;
+  return `<div id="studentProfilePrint" class="rc-paper"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Student Profile • ${s.admission_no}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${s.class}</b><br>${s.status}</div></div>
+  <div style="padding:16px; display:grid; grid-template-columns:90px 1fr 90px; gap:14px; align-items:start;">
+    <div style="width:90px; height:90px; border-radius:12px; background:linear-gradient(135deg,#1e40af,#06b6d4); color:#fff; display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:800;">${s.first_name[0]}${s.last_name[0]}</div>
+    <div><div style="font-size:17px; font-weight:800; color:#0f172a;">${s.first_name} ${s.last_name}</div><div style="font-size:11px; color:#1e40af; font-weight:700; margin-top:2px;">${s.admission_no} • ${s.class} • ${s.gender||''}</div><div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:10px;"><div><span class="muted">DOB:</span> <b>${s.dob||'-'}</b></div><div><span class="muted">Gender:</span> <b>${s.gender||'-'}</b></div><div><span class="muted">Parent:</span> ${s.parent_name||'-'}</div><div><span class="muted">Phone:</span> <b>${s.parent_phone||'-'}</b></div><div style="grid-column:1/-1"><span class="muted">Address:</span> ${s.address||'-'}</div><div><span class="muted">Admission:</span> ${s.admission_date||'-'}</div><div><span class="muted">Status:</span> <span class="badge badge-green">${s.status}</span></div></div></div>
+    <div style="text-align:center;"><img src="${qrUrl}" style="width:90px; height:90px; border:1px solid #e2e8f0; border-radius:8px;"><div style="font-size:7px; color:#64748b; margin-top:4px;">Scan to verify<br>${s.admission_no}</div></div>
+  </div>
+  <div style="margin:0 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px; font-size:10px;"><b>QR Login:</b> <span class="muted">Scan QR to auto-fill login at</span> <b>educontrol-gif2.onrender.com</b> • Encodes Adm No + Name + Class for quick verification at gate/library.</div>
+  <div class="rc-sign"><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Student</b></div></div><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Parent</b></div></div><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b></div></div></div></div>`;
+}
+async function downloadStudentCard(id){
+  const s=await apiGet('/api/students/'+id);
+  const wrap=document.createElement('div'); wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.style.background='#e2e8f0'; wrap.style.padding='20px'; wrap.innerHTML=studentCardHTML(s); document.body.appendChild(wrap);
+  const el=wrap.querySelector('#studentCardPrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff', allowTaint:true}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); pdf.addImage(imgData,'PNG',62,20,86,54,undefined,'FAST'); pdf.save(`${s.admission_no}_${s.first_name}_${s.last_name}_ID.pdf`); document.body.removeChild(wrap);
+}
+async function downloadStudentsPDF(){
+  const students=await apiGet('/api/students');
+  const html=`<div id="studentsPrint" class="rc-paper"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Students Directory • ${today()}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${students.length} Pupils</b></div></div><div style="padding:12px 14px;"><table class="rc-table"><thead><tr><th>#</th><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th></tr></thead><tbody>${students.slice(0,50).map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.admission_no}</b></td><td>${s.first_name} ${s.last_name}</td><td>${s.class}</td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td></tr>`).join('')}</tbody></table></div></div>`;
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=html; document.body.appendChild(wrap);
+  const el=wrap.querySelector('#studentsPrint'); const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST'); else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Students_Directory_${today()}_A4.pdf`); document.body.removeChild(wrap);
+}
+async function downloadAllStudentCardsPDF(){
+  const students=await apiGet('/api/students');
+  if(!students.length) return alert('No students');
+  const {jsPDF}=window.jspdf; const pdf=new jsPDF('p','mm','a4');
+  for(let i=0;i<Math.min(students.length,12);i++){
+    const s=students[i];
+    const wrap=document.createElement('div'); wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.style.background='#fff'; wrap.style.padding='10px'; wrap.innerHTML=studentCardHTML(s); document.body.appendChild(wrap);
+    const el=wrap.querySelector('#studentCardPrint');
+    const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff', allowTaint:true}); const imgData=canvas.toDataURL('image/png',1.0);
+    const px=(i%2===0)?10:110, py=Math.floor((i%2===0?i:i-1)/2)*60+10;
+    // Actually 2 per row, 4 per page (2 cols x 4 rows = 8)
+    const col=i%2, row=Math.floor((i%8)/2), page=Math.floor(i/8);
+    if(i>0 && i%8===0) pdf.addPage();
+    const curPage=Math.floor(i/8), curIdx=i%8, curCol=curIdx%2, curRow=Math.floor(curIdx/2);
+    const x=curCol===0?10:110, y=curRow*60+10;
+    pdf.addImage(imgData,'PNG',x,y,86,54,undefined,'FAST');
+    document.body.removeChild(wrap);
+    await new Promise(r=>setTimeout(r,150));
+  }
+  pdf.save(`Student_ID_Cards_${today()}_A4.pdf`);
 }
 function filterStudents(){ const q=$('#stuQ').value.toLowerCase(); document.querySelectorAll('#stuBody tr').forEach(tr=> tr.style.display = tr.dataset.q.includes(q)?'':'none'); }
 function openStudentModal(id){
@@ -802,24 +875,31 @@ function staffListHTML(staff){
   <div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Staff Records • ${dateStr} • Confidential</div></div>`;
 }
 function staffCardHTML(s){
+  const qrData=encodeURIComponent(`STAFF:${s.staff_no}|${s.name}|${s.role}|https://educontrol-gif2.onrender.com/login?staff=${s.staff_no}`);
+  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=60x60&data=${qrData}`;
   return `<div id="staffCardPrint" style="width:86mm; height:54mm; border:1.5px solid #0f172a; border-radius:10px; overflow:hidden; background:#fff; font-family:Inter,sans-serif; display:flex;">
-    <div style="width:34mm; background:linear-gradient(180deg,#1e40af 0%,#3b82f6 100%); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px; text-align:center;">
-      <div style="width:48px; height:48px; border-radius:50%; background:#fff; color:#1e40af; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:800;">${s.name.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
-      <div style="margin-top:6px; font-size:7px; font-weight:700; letter-spacing:.08em;">EDUCONTROL</div><div style="font-size:6px; opacity:.9;">STAFF ID CARD</div>
-      <div style="margin-top:6px; background:rgba(255,255,255,.15); padding:2px 6px; border-radius:999px; font-size:6px; font-weight:700;">${s.staff_no}</div>
+    <div style="width:34mm; background:linear-gradient(180deg,#1e40af 0%,#3b82f6 100%); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:6px; text-align:center;">
+      <div style="width:40px; height:40px; border-radius:50%; background:#fff; color:#1e40af; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:800;">${s.name.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
+      <div style="margin-top:4px; font-size:6px; font-weight:700; letter-spacing:.07em;">EDUCONTROL</div><div style="font-size:5px; opacity:.9;">STAFF ID</div>
+      <div style="margin-top:4px; background:rgba(255,255,255,.15); padding:1px 5px; border-radius:999px; font-size:5.5px; font-weight:700;">${s.staff_no}</div>
+      <div style="margin-top:4px; background:#fff; padding:2px; border-radius:4px;"><img src="${qrUrl}" style="width:36px; height:36px; display:block;" crossorigin="anonymous"></div>
+      <div style="font-size:4.5px; margin-top:1px; opacity:.85;">Scan to login</div>
     </div>
-    <div style="flex:1; padding:8px 10px; display:flex; flex-direction:column; justify-content:space-between;">
-      <div><div style="font-size:11px; font-weight:800; color:#0f172a; line-height:1.1;">${s.name}</div><div style="font-size:8px; color:#1e40af; font-weight:700; margin-top:2px;">${(s.role||'Staff').toUpperCase()} • ${s.department||''}</div><div style="margin-top:6px; font-size:7.5px; color:#334155; line-height:1.4;"><div><span class="muted">Phone:</span> <b>${s.phone||'-'}</b></div><div><span class="muted">Email:</span> ${s.email||'-'}</div><div><span class="muted">Qualif:</span> ${s.qualification||'-'}</div></div></div>
-      <div style="display:flex; justify-content:space-between; align-items:end; border-top:1px dashed #e2e8f0; padding-top:6px;"><div style="font-size:6px; color:#94a3b8;">Valid with stamp<br><b style="color:#0f172a;">${new Date().getFullYear()}-${new Date().getFullYear()+1}</b></div><div style="width:50px; border-top:1px solid #0f172a; text-align:center; font-size:6px; color:#64748b;">Head Teacher</div></div>
+    <div style="flex:1; padding:7px 8px; display:flex; flex-direction:column; justify-content:space-between;">
+      <div><div style="font-size:10px; font-weight:800; color:#0f172a; line-height:1.1; word-break:break-word;">${s.name}</div><div style="font-size:7px; color:#1e40af; font-weight:700; margin-top:2px;">${(s.role||'Staff').toUpperCase()} • ${s.department||''}</div><div style="margin-top:5px; font-size:7px; color:#334155; line-height:1.35;"><div><span class="muted">Phone:</span> <b>${s.phone||'-'}</b></div><div><span class="muted">Email:</span> <span style="word-break:break-all;">${s.email||'-'}</span></div><div><span class="muted">Qualif:</span> ${s.qualification||'-'}</div></div></div>
+      <div style="display:flex; justify-content:space-between; align-items:end; border-top:1px dashed #e2e8f0; padding-top:5px;"><div style="font-size:5.5px; color:#94a3b8;">Valid ${new Date().getFullYear()}-${new Date().getFullYear()+1}<br><b style="color:#0f172a;">${s.status}</b></div><div style="width:46px; border-top:1px solid #0f172a; text-align:center; font-size:5.5px; color:#64748b;">Head Teacher</div></div>
     </div>
   </div>`;
 }
 function staffProfileHTML(s){
   const dateStr=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  const qrData=encodeURIComponent(`STAFF:${s.staff_no}|${s.name}|https://educontrol-gif2.onrender.com/login?staff=${s.staff_no}`);
+  const qrUrl=`https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${qrData}`;
   return `<div id="staffProfilePrint" class="rc-paper"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Staff Profile • ${dateStr}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${s.staff_no}</b><br>${s.status}</div></div>
-  <div style="padding:16px; display:grid; grid-template-columns:90px 1fr; gap:16px; align-items:start;">
+  <div style="padding:16px; display:grid; grid-template-columns:90px 1fr 90px; gap:14px; align-items:start;">
     <div style="width:90px; height:90px; border-radius:14px; background:linear-gradient(135deg,#1e40af,#06b6d4); color:#fff; display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:800;">${s.name.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
-    <div><div style="font-size:18px; font-weight:800; color:#0f172a;">${s.name}</div><div style="font-size:12px; color:#1e40af; font-weight:700; margin-top:2px;">${s.role||'-'} • ${s.department||'-'}</div><div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:11px;"><div><span class="muted">Staff No:</span> <b>${s.staff_no}</b></div><div><span class="muted">Gender:</span> <b>${s.gender||'-'}</b></div><div><span class="muted">Phone:</span> <b>${s.phone||'-'}</b></div><div><span class="muted">Email:</span> ${s.email||'-'}</div><div><span class="muted">Qualification:</span> ${s.qualification||'-'}</div><div><span class="muted">Hire Date:</span> ${s.hire_date||'-'}</div><div><span class="muted">Salary:</span> <b style="color:#1e40af;">${fmtMoney(s.salary)}</b></div><div><span class="muted">Status:</span> <span class="badge badge-green">${s.status}</span></div></div></div>
+    <div><div style="font-size:17px; font-weight:800; color:#0f172a;">${s.name}</div><div style="font-size:11px; color:#1e40af; font-weight:700; margin-top:2px;">${s.role||'-'} • ${s.department||'-'}</div><div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:7px; font-size:10px;"><div><span class="muted">Staff No:</span> <b>${s.staff_no}</b></div><div><span class="muted">Gender:</span> <b>${s.gender||'-'}</b></div><div><span class="muted">Phone:</span> <b>${s.phone||'-'}</b></div><div><span class="muted">Email:</span> <span style="word-break:break-all;">${s.email||'-'}</span></div><div><span class="muted">Qualification:</span> ${s.qualification||'-'}</div><div><span class="muted">Hire Date:</span> ${s.hire_date||'-'}</div><div><span class="muted">Salary:</span> <b style="color:#1e40af;">${fmtMoney(s.salary)}</b></div><div><span class="muted">Status:</span> <span class="badge badge-green">${s.status}</span></div></div></div>
+    <div style="text-align:center;"><img src="${qrUrl}" style="width:80px; height:80px; border:1px solid #e2e8f0; border-radius:8px;" crossorigin="anonymous"><div style="font-size:7px; color:#64748b; margin-top:4px;">Scan to login<br>${s.staff_no}</div></div>
   </div>
   <div style="margin:0 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px; font-size:11px;"><b>Remarks:</b> <span class="muted">Dedicated staff member. Performance reviewed quarterly. Next appraisal: ${new Date(new Date().setMonth(new Date().getMonth()+3)).toLocaleDateString('en-GB',{month:'short',year:'numeric'})}</span></div>
   <div class="rc-sign"><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Staff</b><br><span class="muted">Sign</span></div></div><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Approve</span></div></div><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>HR / Bursar</b><br><span class="muted">Sign</span></div></div></div>
