@@ -324,6 +324,25 @@ async function apiGet(url, useCache=false){
   try{
     const r=await fetch(url,{headers:authHeader()});
     if(r.status===401){logout(); throw new Error('Unauthorized')}
+    if(r.status===503){
+      const j=await r.json().catch(()=>({})); 
+      if(j.maintenance){
+        // HARD signout — maintenance enabled, force logout non-admin
+        if(user && user.role!=='admin'){
+          localStorage.clear(); token=null;
+          document.getElementById('appView').style.display='none';
+          document.getElementById('loginView').style.display='none';
+          const overlay=document.getElementById('maintenanceOverlay');
+          if(overlay){
+            document.getElementById('maintOverlayMsg').innerHTML=`<b style="color:#991b1b;">HARD MAINTENANCE — SIGNED OUT</b><br>${j.message||'System under maintenance'}`;
+            document.getElementById('maintOverlayBy').textContent=j.enabled_by?`by ${j.enabled_by} at ${new Date(j.enabled_at).toLocaleString()}`:'';
+            overlay.style.display='flex';
+          }
+        }
+        throw new Error(j.message||'System under maintenance (503)');
+      }
+      const j2=await r.json().catch(()=>({error:'Error'})); throw new Error(j2.error||`Error ${r.status}`);
+    }
     if(!r.ok){ const j=await r.json().catch(()=>({error:'Error'})); throw new Error(j.error||`Error ${r.status}`); }
     const j=await r.json();
     if(useCache){ _apiCache[url]=j; _cacheTime[url]=Date.now(); }
@@ -335,9 +354,14 @@ async function apiPost(url,body){
   const btn=document.activeElement; let old=''; if(btn && btn.tagName==='BUTTON'){ old=btn.innerHTML; btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Processing…'; }
   try{
     const r=await fetch(url,{method:'POST', headers:authHeader(), body:JSON.stringify(body)});
+    if(r.status===503){
+      const j=await r.json().catch(()=>({})); if(j.maintenance){
+        if(user && user.role!=='admin'){ localStorage.clear(); token=null; const ov=document.getElementById('maintenanceOverlay'); if(ov){ document.getElementById('maintOverlayMsg').innerHTML=`<b style="color:#991b1b;">HARD MAINTENANCE — SIGNED OUT</b><br>${j.message}`; ov.style.display='flex'; } }
+        throw new Error(j.message||'System under maintenance (503)');
+      }
+    }
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'Error');
-    // clear cache for related GETs
     Object.keys(_apiCache).forEach(k=>{ if(k.includes(url.split('/').slice(0,3).join('/'))) delete _apiCache[k]; });
     return j;
   } finally{
@@ -350,6 +374,7 @@ async function apiPut(url,body){
   const btn=document.activeElement; let old=''; if(btn && btn.tagName==='BUTTON'){ old=btn.innerHTML; btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Updating…'; }
   try{
     const r=await fetch(url,{method:'PUT', headers:authHeader(), body:JSON.stringify(body)});
+    if(r.status===503){ const j=await r.json().catch(()=>({})); if(j.maintenance){ if(user&&user.role!=='admin'){ localStorage.clear(); token=null; const ov=document.getElementById('maintenanceOverlay'); if(ov) ov.style.display='flex'; } throw new Error(j.message||'System under maintenance'); } }
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'Error');
     Object.keys(_apiCache).forEach(k=> delete _apiCache[k]);
@@ -360,6 +385,7 @@ async function apiDel(url){
   showLoader('Deleting…');
   try{
     const r=await fetch(url,{method:'DELETE', headers:authHeader()});
+    if(r.status===503){ const j=await r.json().catch(()=>({})); if(j.maintenance) throw new Error(j.message||'System under maintenance'); }
     const j=await r.json();
     if(!r.ok) throw new Error(j.error||'Error');
     Object.keys(_apiCache).forEach(k=> delete _apiCache[k]);
@@ -2100,9 +2126,9 @@ async function checkMaintenance(){
     }
   }catch(e){}
 }
-// Check on load and every 30s
-setTimeout(checkMaintenance, 1200);
-setInterval(checkMaintenance, 30000);
+// Check on load and every 5s for instant signout when hard enabled
+setTimeout(checkMaintenance, 800);
+setInterval(checkMaintenance, 5000);
 const _origShowApp=showApp;
 showApp=function(){ _origShowApp(); setTimeout(checkMaintenance, 600); };
 function renderRoles(){
