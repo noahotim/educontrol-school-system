@@ -332,6 +332,21 @@ function init(){
   }catch(e){ console.log('seed teachers',e.message); }
   // ensure maintenance table
   try{ db.exec(`CREATE TABLE IF NOT EXISTS maintenance (id INTEGER PRIMARY KEY CHECK (id=1), enabled INTEGER DEFAULT 0, message TEXT DEFAULT 'System under maintenance — please try again later', enabled_by TEXT, enabled_at TEXT)`); const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get(); if(!m) db.prepare('INSERT INTO maintenance (id,enabled,message) VALUES (1,0,?)').run('System under maintenance — please try again later'); }catch(e){ console.log('maintenance table',e.message); }
+  // scalable school levels — P1-P7 primary now, S1-S6 secondary ready
+  try{
+    db.exec(`CREATE TABLE IF NOT EXISTS system_settings (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)`);
+    const lvl=db.prepare('SELECT * FROM system_settings WHERE key=?').get('school_level');
+    if(!lvl) db.prepare('INSERT INTO system_settings (key,value,updated_at) VALUES (?,?,?)').run('school_level','primary',new Date().toISOString());
+    const active=db.prepare('SELECT * FROM system_settings WHERE key=?').get('active_classes');
+    if(!active){
+      // P1-P7 active now, S1-S6 ready but inactive (scalable)
+      const pClasses=['P1','P2','P3','P4','P5','P6','P7'];
+      db.prepare('INSERT INTO system_settings (key,value,updated_at) VALUES (?,?,?)').run('active_classes', JSON.stringify(pClasses), new Date().toISOString());
+    }
+    // ensure all classes exist (both primary + secondary for future)
+    const allNeeded=['P1','P2','P3','P4','P5','P6','P7','S1','S2','S3','S4','S5','S6','Baby Class','Middle Class','Top Class'];
+    allNeeded.forEach(n=>{ try{ db.prepare('INSERT OR IGNORE INTO classes (name,capacity) VALUES (?,?)').run(n,40); }catch(e){} });
+  }catch(e){ console.log('scalable settings',e.message); }
 }
 init();
 module.exports = db;

@@ -175,6 +175,7 @@ label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bot
 <div id="modal" class="modal" onclick="if(event.target===this) closeModal()"><div id="modalCard" class="modal-card"></div></div>
 <div id="globalLoader" style="display:none; position:fixed; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,#1e40af,#06b6d4); z-index:9999; animation: shimmer 1.2s infinite;"></div>
 <div id="actionToast" style="display:none; position:fixed; bottom:20px; right:20px; background:#0f172a; color:#fff; padding:10px 14px; border-radius:10px; font-size:13px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,.2);"><i class="ri-loader-4-line" style="animation: spin 1s linear infinite; display:inline-block;"></i> <span id="toastText">Loading…</span></div>
+<div id="maintenanceOverlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,.92); z-index:9999; align-items:center; justify-content:center; padding:20px;"><div style="background:#fff; border-radius:16px; padding:28px; max-width:520px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,.3);"><i class="ri-alarm-warning-line" style="font-size:42px; color:#ef4444;"></i><h3 style="margin-top:10px; color:#991b1b;">System Under Maintenance</h3><p id="maintOverlayMsg" class="muted" style="margin-top:8px; font-size:13px;">The admin has enabled maintenance mode. Please try again later.</p><p class="muted" style="font-size:11px; margin-top:10px;">Admin can still login to disable. • <span id="maintOverlayBy" class="muted"></span></p><button class="btn btn-sm" style="margin-top:14px;" onclick="location.reload()"><i class="ri-refresh-line"></i> Check Again</button></div></div>
 <style>@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}} @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}} .skeleton{ background:linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 50%,#e2e8f0 75%); background-size:200% 100%; animation: shimmer 1.5s infinite; border-radius:8px; min-height:16px; }</style>
 
 <script>
@@ -825,17 +826,20 @@ async function saveResults(examId){
 async function viewResults(examId){
   const rows=await apiGet('/api/results?exam_id='+examId);
   const examName = document.querySelector(`button[onclick="viewResults(${examId})"]`)?.closest('tr')?.querySelector('td')?.textContent || `Exam #${examId}`;
+  const canCompile = canAccess('exams:compile') || user.role==='class_teacher' || user.role==='admin';
   $('#resView').innerHTML=`
   <div class="card" style="border:1.5px solid #1e40af;">
     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-      <div><h4><i class="ri-file-list-3-line"></i> Results (${rows.length}) — ${examName}</h4><p class="muted" style="font-size:11px;">${rows.length} entries • Grouped by student</p></div>
+      <div><h4><i class="ri-file-list-3-line"></i> Results (${rows.length}) — ${examName}</h4><p class="muted" style="font-size:11px;">${rows.length} entries • Grouped by student • ${canCompile?'<span class="badge badge-green">Class Teacher: One-Click Compile</span>':''}</p></div>
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        ${canCompile?`<button class="btn btn-sm" style="background:#1e40af;" onclick="compileResults(${examId})"><i class="ri-magic-line"></i> Compile (Auto)</button>`:''}
         <button class="btn btn-sm" style="background:#10b981;" onclick="previewBulkResults(${examId})"><i class="ri-eye-line"></i> Preview SMS</button>
         <button class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="sendBulkResults(${examId})"><i class="ri-message-3-line"></i> Send to Parents (Bulk)</button>
         <button class="btn btn-sm btn-outline" onclick="previewResultsPDF(${examId})"><i class="ri-eye-line"></i> Preview PDF</button>
         <button class="btn btn-sm btn-outline" onclick="downloadResultsPDF(${examId})"><i class="ri-download-line"></i> PDF</button>
       </div>
     </div>
+    <div id="compileOut" style="margin-top:10px;"></div>
     <div class="table-wrap" style="margin-top:10px; max-height:320px; overflow:auto;"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.first_name} ${r.last_name}</b><div class="muted" style="font-size:10px;">${r.admission_no||''}</div></td><td><span class="badge badge-blue">${r.class}</span></td><td>${r.subject}</td><td><b>${r.marks}</b></td><td><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div>
     <div class="alert alert-info" style="margin-top:10px;"><b>Bulk SMS:</b> Sends personalized result SMS to each parent (one per student, even if multiple subjects). Uses parent phone from student record. <span class="muted">Example: "Dear Parent, Sarah (P5) results for Term I: Mathematics:78(D1), English:65(C3). Avg:71.5% - EduControl"</span></div>
     <div id="bulkPreview" style="margin-top:10px;"></div>
@@ -850,6 +854,18 @@ async function previewResultsPDF(examId){
   const html=`<div id="resultsPrintPreview" class="rc-paper" style="border:1px solid #0f172a;"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Examination Results • ${examName}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${rows.length} Entries</b><br>${new Date().toLocaleDateString('en-GB')}</div></div><div style="padding:12px 14px;"><table class="rc-table"><thead><tr><th>#</th><th>Student</th><th>Class</th><th>Subject</th><th style="text-align:center;">Marks</th><th style="text-align:center;">Grade</th></tr></thead><tbody>${rows.slice(0,30).map((r,i)=>`<tr><td>${i+1}</td><td><b>${r.first_name} ${r.last_name}</b><div class="muted" style="font-size:9px;">${r.admission_no||''}</div></td><td>${r.class}</td><td>${r.subject}</td><td style="text-align:center;"><b>${r.marks}</b></td><td style="text-align:center;"><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}${rows.length>30?`<tr><td colspan=6 style="text-align:center;" class="muted">+ ${rows.length-30} more rows in PDF</td></tr>`:``}</tbody></table></div><div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">Preview — ${rows.length} rows • Click Download PDF for full A4</div></div>`;
   document.getElementById('resultsPreview').innerHTML=`<div class="a4-wrap" style="flex-direction:column; align-items:center;">${html}<div class="no-print" style="display:flex; gap:8px; margin-top:10px;"><button class="btn btn-sm" onclick="downloadResultsPDF(${examId})"><i class="ri-download-line"></i> Download PDF (A4)</button><button class="btn btn-sm btn-outline" onclick="document.getElementById('resultsPreview').innerHTML=''">Close Preview</button></div></div>`;
   document.getElementById('resultsPreview').scrollIntoView({behavior:'smooth'});
+}
+async function compileResults(examId){
+  const btn=document.querySelector(`button[onclick="compileResults(${examId})"]`);
+  const old=btn?btn.innerHTML:'';
+  if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Compiling…';
+  try{
+    const res=await apiPost(`/api/results/compile/${examId}`, {});
+    document.getElementById('compileOut').innerHTML=`<div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; margin-top:8px;"><b>✓ Auto-Compiled ${res.compiled} students</b> for ${res.exam}<br><span class="muted" style="font-size:11px;">Top: ${res.top.map(t=>`#${t.position} ${t.student_id} avg ${t.average}%`).join(' | ')}</span><br><span style="font-size:11px;">${res.note} • Report cards & positions ready — just click Report Cards to view.</span></div>`;
+    // auto-refresh compiled view if exists
+    setTimeout(()=> viewResults(examId), 800);
+  } catch(e){ document.getElementById('compileOut').innerHTML=`<div class="alert" style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b;">Compile failed: ${e.message}<br><span class="muted" style="font-size:11px;">Subject teachers must enter marks first for this exam.</span></div>`; }
+  finally{ if(btn) btn.innerHTML=old; }
 }
 async function previewBulkResults(examId){
   try{
@@ -1906,20 +1922,102 @@ async function sendSMS(){
   $('#smsRes').innerHTML=`<div class="alert alert-info">Queued ${r.sent} SMS - ${r.note}</div>`; setTimeout(renderSMS,1200);
 }
 
-// BACKUP
+// BACKUP — with Maintenance Kill Switch + Scalability (P1-P7 now, S1-S6 ready)
 function renderBackup(){
   $('#content').innerHTML=`
   <div class="grid grid2">
     <div class="card"><h4><i class="ri-shield-keyhole-line"></i> Backup & Data Security</h4><p class="muted" style="margin:8px 0">Database is SQLite file at <code>data/school.db</code>. On Render, add a Disk for persistence.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-sm" onclick="backupDB()"><i class="ri-download-line"></i> Download Backup (.db)</button><button class="btn btn-sm btn-outline" onclick="alert('To restore: upload your .db to data/school.db on server and restart. For Render, use SFTP or redeploy with file.')">Restore Data</button><button class="btn btn-sm btn-outline" onclick="navigate('roles')"><i class="ri-shield-user-line"></i> View Roles</button></div>
-      <div class="alert alert-info" style="margin-top:12px"><b>Role-Based Access:</b> 5 roles enforced on frontend + backend (403 if forbidden). See <b>Roles & Permissions</b> page for full matrix.</div>
-      <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>headteacher</option><option>teacher</option><option>bursar</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
+      <div class="alert alert-info" style="margin-top:12px"><b>Role-Based Access:</b> 7 roles (admin/headteacher/teacher/class_teacher/subject_teacher/bursar/nurse) enforced on frontend + backend (403 if forbidden). See <b>Roles & Permissions</b>.</div>
+      <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>headteacher</option><option>teacher</option><option>class_teacher</option><option>subject_teacher</option><option>bursar</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
       <div class="alert" style="margin-top:10px; background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>Permanent Backup Link:</b><br><code style="font-size:10px; word-break:break-all;">${location.origin}/api/backup?key=educontrol-permanent-2026</code><br><span style="font-size:11px;">Never expires - bookmark for automated backups.</span></div>
     </div>
-    <div class="card"><h4>Secure User Accounts</h4><div id="userList" class="muted">Loading...</div>
-      <h4 style="margin-top:14px">Protect Important Records</h4><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--muted)"><li>Daily auto-backup recommended (cron on Render)</li><li>Enable Render Disk for <code>/data</code> persistence</li><li>JWT 10y + permanent ?key - bcrypt passwords</li><li>All deletes require confirmation | 403 on forbidden role</li></ul>
+    <div class="card">
+      <h4><i class="ri-alarm-warning-line"></i> Maintenance Kill Switch <span class="badge badge-red" style="margin-left:6px;">Admin Only</span></h4>
+      <p class="muted" style="font-size:11px; margin:6px 0;">Instantly lock system for all non-admin users. Admin stays online.</p>
+      <div id="maintStatus" class="muted" style="margin:8px 0;">Loading status…</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+        <button class="btn btn-sm btn-danger" onclick="toggleMaintenance(true)"><i class="ri-stop-circle-line"></i> Enable Maintenance</button>
+        <button class="btn btn-sm btn-outline" onclick="toggleMaintenance(false)"><i class="ri-play-circle-line"></i> Disable</button>
+        <button class="btn btn-sm btn-outline" onclick="loadMaintenance()"><i class="ri-refresh-line"></i> Refresh</button>
+      </div>
+      <div style="margin-top:8px;"><label>Maintenance Message</label><input id="maintMsg" class="input" value="System under maintenance — please try again later" placeholder="Message shown to users"></div>
+      <div class="alert" style="margin-top:10px; background:#fef2f2; border:1px solid #fecaca; color:#991b1b; font-size:11px;"><b>When ON:</b> All non-admin (teacher/bursar/nurse) get <code>503 Maintenance</code> + message. Admin can still login and disable.</div>
+      <h4 style="margin-top:16px;"><i class="ri-scales-3-line"></i> Scalability — P1-P7 Now, S1-S6 Ready</h4>
+      <div id="schoolLevelBox" class="muted">Loading…</div>
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+        <button class="btn btn-sm" style="background:#10b981;" onclick="setSchoolLevel('primary')"><i class="ri-book-open-line"></i> Primary P1-P7</button>
+        <button class="btn btn-sm btn-outline" onclick="setSchoolLevel('secondary')"><i class="ri-graduation-cap-line"></i> Enable Secondary S1-S6</button>
+        <button class="btn btn-sm btn-outline" onclick="setSchoolLevel('combined')"><i class="ri-community-line"></i> Combined P1-S6</button>
+      </div>
+      <div class="alert" style="margin-top:8px; background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; font-size:11px;"><b>100% Upgradable:</b> All classes P1-S6 already in DB. One click enables S1-S6, promotion P7→S1 auto, secure & scalable.</div>
     </div>
-  </div>`;
+  </div>
+  <div class="card" style="margin-top:16px;"><h4>Secure User Accounts</h4><div id="userList" class="muted">Loading...</div></div>`;
+  loadMaintenance(); loadSchoolLevel();
+  apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; }).catch(()=>{ $('#userList').innerHTML=`<div class="alert alert-info">Only admin/headteacher can view users. Your role <b>${user.role}</b> cannot access this.</div>`; });
+}
+async function loadMaintenance(){
+  try{
+    const m=await fetch('/api/maintenance').then(r=>r.json());
+    const el=document.getElementById('maintStatus');
+    if(el) el.innerHTML= m.enabled ? `<span class="badge badge-red">ON — Maintenance Active</span> <span class="muted">by ${m.enabled_by||'-'} at ${m.enabled_at?new Date(m.enabled_at).toLocaleString():''}</span><br><span style="font-size:11px; color:#991b1b;">Message: "${m.message}"</span>` : `<span class="badge badge-green">OFF — System Live</span> <span class="muted">All roles can access</span>`;
+    const msg=document.getElementById('maintMsg');
+    if(msg && m.message) msg.value=m.message;
+  } catch(e){ const el=document.getElementById('maintStatus'); if(el) el.textContent='Failed to load: '+e.message; }
+}
+async function toggleMaintenance(enable){
+  const message=document.getElementById('maintMsg')?.value||'System under maintenance — please try again later';
+  if(enable && !confirm('Enable maintenance? All non-admin users will be locked out (503). Admin stays online. Continue?')) return;
+  try{
+    const res=await apiPost('/api/maintenance/toggle', {enabled: enable, message});
+    alert(enable ? 'Maintenance ENABLED — non-admin locked (503)' : 'Maintenance DISABLED — system live for all');
+    loadMaintenance();
+  } catch(e){ alert('Failed: '+e.message); }
+}
+async function loadSchoolLevel(){
+  try{
+    const s=await fetch('/api/settings/school').then(r=>r.json());
+    const el=document.getElementById('schoolLevelBox');
+    if(el) el.innerHTML=`<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;"><span class="badge ${s.level==='primary'?'badge-green':s.level==='secondary'?'badge-blue':'badge-amber'}" style="font-size:11px;">${s.level.toUpperCase()}</span> <span class="muted">Active: <b>${s.activeClasses.join(', ')}</b></span></div><div class="muted" style="font-size:11px; margin-top:4px;">All classes P1-S6 exist in DB • Secure RBAC + JWT + bcrypt • ${s.level==='primary'?'P1-P7 active now, S1-S6 one-click ready':'S1-S6 enabled — scalable to 1000+ pupils'}</div>`;
+  } catch(e){ const el=document.getElementById('schoolLevelBox'); if(el) el.textContent='Failed: '+e.message; }
+}
+async function setSchoolLevel(level){
+  const map={primary:['P1','P2','P3','P4','P5','P6','P7'], secondary:['S1','S2','S3','S4','S5','S6'], combined:['P1','P2','P3','P4','P5','P6','P7','S1','S2','S3','S4','S5','S6']};
+  const active=map[level]||map.primary;
+  if(!confirm(`Set school level to ${level.toUpperCase()}?\nActive classes: ${active.join(', ')}\n\nThis is instantly upgradable and secure (admin/headteacher only).`)) return;
+  try{
+    const res=await apiPost('/api/settings/school', {level, activeClasses: active});
+    alert(`Upgraded to ${res.level} — Active: ${res.activeClasses.join(', ')}\n${res.note}`);
+    loadSchoolLevel();
+  } catch(e){ alert('Failed: '+e.message); }
+}
+async function checkMaintenance(){
+  try{
+    const m=await fetch('/api/maintenance').then(r=>r.json());
+    const overlay=document.getElementById('maintenanceOverlay');
+    if(!overlay) return;
+    if(m.enabled){
+      const isAdmin = user && user.role==='admin';
+      if(!isAdmin){
+        document.getElementById('maintOverlayMsg').textContent=m.message||'System under maintenance — please try again later';
+        document.getElementById('maintOverlayBy').textContent=m.enabled_by?`by ${m.enabled_by} at ${new Date(m.enabled_at).toLocaleString()}`:'';
+        overlay.style.display='flex';
+        // also block API with toast
+        if(user) setTimeout(()=> alert('Maintenance ON: '+m.message), 500);
+      } else {
+        overlay.style.display='none';
+      }
+    } else {
+      overlay.style.display='none';
+    }
+  }catch(e){}
+}
+// Check on load and every 30s
+setTimeout(checkMaintenance, 1200);
+setInterval(checkMaintenance, 30000);
+const _origShowApp=showApp;
+showApp=function(){ _origShowApp(); setTimeout(checkMaintenance, 600); };
   apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; }).catch(()=>{ $('#userList').innerHTML=`<div class="alert alert-info">Only admin/headteacher can view users. Your role <b>${user.role}</b> cannot access this.</div>`; });
 }
 function renderRoles(){

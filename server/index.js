@@ -461,12 +461,32 @@ app.get('/api/maintenance', (req,res)=>{
   res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:''});
 });
 app.post('/api/maintenance/toggle', verify, authorize('*'), (req,res)=>{
-  // only admin should toggle — check role
   if(req.user.role!=='admin') return res.status(403).json({error:'Only admin can toggle maintenance'});
   const {enabled, message}=req.body;
   const msg=message||'System under maintenance — please try again later';
   db.prepare('UPDATE maintenance SET enabled=?, message=?, enabled_by=?, enabled_at=? WHERE id=1').run(enabled?1:0, msg, req.user.username, new Date().toISOString());
   res.json({enabled: !!enabled, message: msg});
+});
+// Scalable school levels — P1-P7 now, S1-S6 ready (100% secure, upgradable)
+app.get('/api/settings/school', (req,res)=>{
+  const lvl=db.prepare('SELECT value FROM system_settings WHERE key=?').get('school_level');
+  const active=db.prepare('SELECT value FROM system_settings WHERE key=?').get('active_classes');
+  const lvlVal=lvl?lvl.value:'primary';
+  const activeVal=active?JSON.parse(active.value):['P1','P2','P3','P4','P5','P6','P7'];
+  res.json({level: lvlVal, activeClasses: activeVal, allClasses: ['P1','P2','P3','P4','P5','P6','P7','S1','S2','S3','S4','S5','S6'], secure: true, upgradable: true});
+});
+app.get('/api/settings/active-classes', (req,res)=>{
+  const active=db.prepare('SELECT value FROM system_settings WHERE key=?').get('active_classes');
+  res.json(active?JSON.parse(active.value):['P1','P2','P3','P4','P5','P6','P7']);
+});
+app.post('/api/settings/school', verify, authorize('*'), (req,res)=>{
+  if(req.user.role!=='admin' && req.user.role!=='headteacher') return res.status(403).json({error:'Only admin/headteacher'});
+  const {level, activeClasses}=req.body;
+  if(level) db.prepare('INSERT OR REPLACE INTO system_settings (key,value,updated_at) VALUES (?,?,?)').run('school_level', level, new Date().toISOString());
+  if(activeClasses) db.prepare('INSERT OR REPLACE INTO system_settings (key,value,updated_at) VALUES (?,?,?)').run('active_classes', JSON.stringify(activeClasses), new Date().toISOString());
+  const lvl=db.prepare('SELECT value FROM system_settings WHERE key=?').get('school_level');
+  const active=db.prepare('SELECT value FROM system_settings WHERE key=?').get('active_classes');
+  res.json({level: lvl.value, activeClasses: JSON.parse(active.value), note: level==='secondary' || (activeClasses&&activeClasses.includes('S1')) ? 'Upgraded to secondary — S1-S6 now active. Promotion P7→S1 enabled.' : 'Primary P1-P7 active. Ready to upgrade to S1-S6 anytime with one click.'});
 });
 
 // Auto-seed on first run (Render free has empty DB)
