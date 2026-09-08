@@ -127,6 +127,7 @@ label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bot
 
 <div id="loginView" class="login-wrap">
   <div class="login-card">
+    <div id="maintBanner" style="display:none; background:#fef2f2; border:2px solid #ef4444; color:#991b1b; border-radius:10px; padding:10px 12px; margin-bottom:12px; font-size:12px; text-align:center;"></div>
     <div style="text-align:center;margin-bottom:10px"><span style="background:var(--primary);color:#fff;padding:6px 10px;border-radius:10px;font-weight:800;letter-spacing:.06em">EDUCONTROL</span></div>
     <h1>ONE SCHOOL. ONE SYSTEM.</h1>
     <p class="sub">Complete Control - Academic | Finance | Medical | Transport</p>
@@ -337,9 +338,22 @@ async function doChangePassword(isFirst){
 function logout(){ localStorage.clear(); location.reload(); }
 
 // Force non-admin to login if maintenance is ON — used on page load/render to avoid #backup dead-end
+function setMaintBanner(m){
+  const b=document.getElementById('maintBanner');
+  if(!b) return;
+  if(m && m.enabled){
+    const auto=m.enabled_until?` — auto-off at <b>${new Date(m.enabled_until).toLocaleTimeString()}</b> (${Math.max(0,Math.round((new Date(m.enabled_until)-Date.now())/60000))} min left)`:'';
+    b.style.display='block';
+    b.innerHTML=`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE MODE IS ON</b>${auto}<br>Only <b>admin</b> can sign in right now. Other accounts are blocked until it's OFF.`;
+    document.getElementById('username').value='admin';
+  } else {
+    b.style.display='none'; b.innerHTML='';
+  }
+}
 async function forceMaintenanceRedirect(){
   try{
     const m=await fetch('/api/maintenance').then(r=>r.json());
+    setMaintBanner(m);
     if(m.enabled && (!user || user.role!=='admin')){
       // Hard logout non-admin, show login
       if(user && user.role!=='admin'){ localStorage.clear(); token=null; user=null; }
@@ -348,15 +362,7 @@ async function forceMaintenanceRedirect(){
       $('#loginView').style.display='flex';
       const ov=document.getElementById('maintenanceOverlay');
       if(ov) ov.style.display='none';
-      const loginCard=document.querySelector('.login-card');
-      if(loginCard && !document.getElementById('hardLoginMsg')){
-        const d=document.createElement('div');
-        d.id='hardLoginMsg';
-        d.className='alert';
-        d.style.cssText='background:#fef2f2; border:1px solid #fecaca; color:#991b1b; margin-top:10px; font-size:12px;';
-        d.innerHTML=m.enabled_until?`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b> — auto-off at <b>${new Date(m.enabled_until).toLocaleTimeString()}</b>.<br>Only <b>admin</b> can sign in to disable it now.`:`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b><br>Only <b>admin</b> can sign in to disable it now. Other accounts are blocked.`;
-        loginCard.appendChild(d);
-      }
+      const old=document.getElementById('hardLoginMsg'); if(old) old.remove();
       document.getElementById('username').value='admin';
       return true;
     }
@@ -2186,6 +2192,7 @@ async function setSchoolLevel(level){
 async function checkMaintenance(){
   try{
     const m=await fetch('/api/maintenance').then(r=>r.json());
+    setMaintBanner(m);
     const overlay=document.getElementById('maintenanceOverlay');
     if(!overlay) return;
     if(m.enabled){
@@ -2199,16 +2206,8 @@ async function checkMaintenance(){
         }
         document.getElementById('maintOverlayMsg').innerHTML=`<b style="color:#991b1b;">HARD MAINTENANCE — SYSTEM LOCKED</b><br>${m.message||'System under HARD maintenance — only admin can login'}`;
         document.getElementById('maintOverlayBy').textContent=m.enabled_by?`Enabled by ${m.enabled_by} at ${new Date(m.enabled_at).toLocaleString()} — only admin can disable`+(m.enabled_until?` • auto-off ${new Date(m.enabled_until).toLocaleTimeString()}`:'')+'':'';
-        // Banner shown on login card either way (admin CAN login to disable)
-        const loginCard=document.querySelector('.login-card');
-        if(loginCard && !document.getElementById('hardLoginMsg')){
-          const d=document.createElement('div');
-          d.id='hardLoginMsg';
-          d.className='alert';
-          d.style.cssText='background:#fef2f2; border:1px solid #fecaca; color:#991b1b; margin-top:10px; font-size:12px;';
-          d.innerHTML=m.enabled_until?`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b> — auto-off at <b>${new Date(m.enabled_until).toLocaleTimeString()}</b>.<br>Only <b>admin</b> can sign in to disable it now.`:`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE IS ON</b><br>Only <b>admin</b> can sign in to disable it now. Other accounts are blocked.`;
-          loginCard.appendChild(d);
-        }
+        // Banner shown on login card either way (admin CAN login to disable) — single banner
+        const old=document.getElementById('hardLoginMsg'); if(old) old.remove();
         document.getElementById('username').value=!user?'admin':document.getElementById('username').value;
         if(!token && !user){
           // Already signed out: show login normally — no scary overlay
