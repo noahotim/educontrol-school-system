@@ -173,6 +173,9 @@ label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bot
 </div>
 
 <div id="modal" class="modal" onclick="if(event.target===this) closeModal()"><div id="modalCard" class="modal-card"></div></div>
+<div id="globalLoader" style="display:none; position:fixed; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,#1e40af,#06b6d4); z-index:9999; animation: shimmer 1.2s infinite;"></div>
+<div id="actionToast" style="display:none; position:fixed; bottom:20px; right:20px; background:#0f172a; color:#fff; padding:10px 14px; border-radius:10px; font-size:13px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,.2);"><i class="ri-loader-4-line" style="animation: spin 1s linear infinite; display:inline-block;"></i> <span id="toastText">Loading…</span></div>
+<style>@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}} @keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}} .skeleton{ background:linear-gradient(90deg,#e2e8f0 25%,#f1f5f9 50%,#e2e8f0 75%); background-size:200% 100%; animation: shimmer 1.5s infinite; border-radius:8px; min-height:16px; }</style>
 
 <script>
 const API = '';
@@ -271,10 +274,58 @@ function showApp(){
   renderNav(); navigate('dashboard'); $('#todayStr').textContent=new Date().toDateString();
   if(window.innerWidth<700) $('#menuBtn').style.display='inline-flex';
 }
-async function apiGet(url){ const r=await fetch(url,{headers:authHeader()}); if(r.status===401){logout(); throw new Error('Unauthorized')} return r.json(); }
-async function apiPost(url,body){ const r=await fetch(url,{method:'POST', headers:authHeader(), body:JSON.stringify(body)}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error'); return j; }
-async function apiPut(url,body){ const r=await fetch(url,{method:'PUT', headers:authHeader(), body:JSON.stringify(body)}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error'); return j; }
-async function apiDel(url){ const r=await fetch(url,{method:'DELETE', headers:authHeader()}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error'); return j; }
+let _apiCache={}; let _cacheTime={};
+function showLoader(text){ const l=document.getElementById('globalLoader'); const t=document.getElementById('actionToast'); const tt=document.getElementById('toastText'); if(l) l.style.display='block'; if(t){ t.style.display='flex'; if(tt) tt.textContent=text||'Loading…'; } }
+function hideLoader(){ const l=document.getElementById('globalLoader'); const t=document.getElementById('actionToast'); if(l) l.style.display='none'; if(t) t.style.display='none'; }
+async function apiGet(url, useCache=false){
+  if(useCache && _apiCache[url] && Date.now()-(_cacheTime[url]||0) < 30000) return _apiCache[url];
+  showLoader('Loading…');
+  try{
+    const r=await fetch(url,{headers:authHeader()});
+    if(r.status===401){logout(); throw new Error('Unauthorized')}
+    if(!r.ok){ const j=await r.json().catch(()=>({error:'Error'})); throw new Error(j.error||`Error ${r.status}`); }
+    const j=await r.json();
+    if(useCache){ _apiCache[url]=j; _cacheTime[url]=Date.now(); }
+    return j;
+  } finally{ hideLoader(); }
+}
+async function apiPost(url,body){
+  showLoader('Saving…');
+  const btn=document.activeElement; let old=''; if(btn && btn.tagName==='BUTTON'){ old=btn.innerHTML; btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Processing…'; }
+  try{
+    const r=await fetch(url,{method:'POST', headers:authHeader(), body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||'Error');
+    // clear cache for related GETs
+    Object.keys(_apiCache).forEach(k=>{ if(k.includes(url.split('/').slice(0,3).join('/'))) delete _apiCache[k]; });
+    return j;
+  } finally{
+    hideLoader();
+    if(btn && btn.tagName==='BUTTON'){ btn.disabled=false; btn.innerHTML=old; }
+  }
+}
+async function apiPut(url,body){
+  showLoader('Updating…');
+  const btn=document.activeElement; let old=''; if(btn && btn.tagName==='BUTTON'){ old=btn.innerHTML; btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Updating…'; }
+  try{
+    const r=await fetch(url,{method:'PUT', headers:authHeader(), body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||'Error');
+    Object.keys(_apiCache).forEach(k=> delete _apiCache[k]);
+    return j;
+  } finally{ hideLoader(); if(btn && btn.tagName==='BUTTON'){ btn.disabled=false; btn.innerHTML=old; } }
+}
+async function apiDel(url){
+  showLoader('Deleting…');
+  try{
+    const r=await fetch(url,{method:'DELETE', headers:authHeader()});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||'Error');
+    Object.keys(_apiCache).forEach(k=> delete _apiCache[k]);
+    return j;
+  } finally{ hideLoader(); }
+}
+function clearCache(){ _apiCache={}; _cacheTime={}; }
 
 // MODAL
 function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
@@ -282,7 +333,9 @@ function closeModal(){ $('#modal').classList.remove('open'); }
 
 // DASHBOARD - Role-Specific
 async function renderDashboard(){
-  const d=await apiGet('/api/dashboard');
+   // Skeleton for speed
+  $('#content').innerHTML=`<div class="grid grid4"><div class="card skeleton" style="height:90px;"></div><div class="card skeleton" style="height:90px;"></div><div class="card skeleton" style="height:90px;"></div><div class="card skeleton" style="height:90px;"></div></div><div class="grid grid4" style="margin-top:16px"><div class="card skeleton" style="height:70px;"></div><div class="card skeleton" style="height:70px;"></div><div class="card skeleton" style="height:70px;"></div><div class="card skeleton" style="height:70px;"></div></div><div class="grid grid2" style="margin-top:16px"><div class="card skeleton" style="height:180px;"></div><div class="card skeleton" style="height:180px;"></div></div>`;
+  const d=await apiGet('/api/dashboard', true);
   const role = user.role;
   const isAdmin = role==='admin', isHead = role==='headteacher', isTeacher = role==='teacher', isBursar = role==='bursar', isNurse = role==='nurse';
   const titleMap = {admin:'Admin Control Centre', headteacher:'Head Teacher Dashboard', teacher:'Teacher Dashboard', bursar:'Bursar - Finance Centre', nurse:'Sickbay Dashboard'};
@@ -1166,7 +1219,7 @@ async function renderDefaulters(){
     <div class="form-grid" style="margin-top:12px;">
       <div><label>Term</label><select id="def_term" class="input"><option>Term I</option><option>Term II</option><option>Term III</option></select></div>
       <div><label>Class (or All)</label><select id="def_class" class="input"><option value="">All Classes</option>${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div>
-      <div style="display:flex; gap:8px; align-items:end;"><button class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="filterDefaulters()"><i class="ri-filter-3-line"></i> Filter Defaulters</button><button class="btn btn-sm btn-outline" onclick="filterDefaulters()">Refresh</button></div>
+      <div style="display:flex; gap:8px; align-items:end;"><button type="button" class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="filterDefaulters()"><i class="ri-filter-3-line"></i> Filter Defaulters</button><button type="button" class="btn btn-sm btn-outline" onclick="filterDefaulters()">Refresh</button></div>
     </div>
   </div>
   <div id="defOut" style="margin-top:16px;"><div class="card" style="text-align:center; padding:30px;"><i class="ri-filter-3-line" style="font-size:28px; color:#f59e0b;"></i><p class="muted" style="margin-top:8px;">Select Term & Class then click <b>Filter Defaulters</b></p></div></div>
