@@ -1974,9 +1974,12 @@ function renderBackup(){
       <div class="alert" style="margin-top:8px; background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; font-size:11px;"><b>100% Upgradable:</b> All classes P1-S6 already in DB. One click enables S1-S6, promotion P7→S1 auto, secure & scalable.</div>
     </div>
   </div>
-  <div class="card" style="margin-top:16px;"><h4>Secure User Accounts</h4><div id="userList" class="muted">Loading...</div></div>`;
+  <div class="card" style="margin-top:16px;"><h4>Secure User Accounts <span class="badge badge-blue" style="margin-left:6px;">Admin can Edit</span></h4><div id="userList" class="muted">Loading...</div><div class="muted" style="font-size:11px; margin-top:6px;">As admin, click <b>Edit</b> to change role/name/email/password, or <b>Del</b> to remove (cannot delete admin).</div></div>`;
   loadMaintenance(); loadSchoolLevel();
-  apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; }).catch(()=>{ $('#userList').innerHTML=`<div class="alert alert-info">Only admin/headteacher can view users. Your role <b>${user.role}</b> cannot access this.</div>`; });
+  apiGet('/api/users').then(users=>{
+    const isAdmin=user.role==='admin';
+    $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th>${isAdmin?'<th>Actions</th>':''}</tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td>${isAdmin?`<td style="display:flex; gap:4px;"><button class="btn btn-sm btn-outline" style="padding:4px 8px; font-size:11px;" onclick="editUser(${u.id},'${u.username}','${u.role}','${u.name||''}','${u.email||''}')"><i class="ri-edit-line"></i> Edit</button>${u.username!=='admin'?`<button class="btn btn-sm btn-danger" style="padding:4px 8px;" onclick="delUser(${u.id},'${u.username}')"><i class="ri-delete-bin-line"></i> Del</button>`:``}</td>`:''}</tr>`).join('')}</tbody></table></div>`;
+  }).catch(()=>{ $('#userList').innerHTML=`<div class="alert alert-info">Only admin/headteacher can view users. Your role <b>${user.role}</b> cannot access this.</div>`; });
 }
 async function loadMaintenance(){
   try{
@@ -2113,6 +2116,31 @@ async function createUser(){
   const body={username:$('#u_user').value, password:$('#u_pass').value, role:$('#u_role').value, name:$('#u_name').value};
   if(!body.username||!body.password) return alert('Username & password required');
   try{ await apiPost('/api/register', body); $('#uMsg').innerHTML='<span style="color:var(--success)">User created</span>'; renderBackup(); }catch(e){ $('#uMsg').textContent=e.message; }
+}
+function editUser(id, username, role, name, email){
+  openModal(`<h3><i class="ri-edit-line"></i> Edit User — ${username} <span class="badge badge-blue">${role}</span></h3>
+    <div class="alert alert-info" style="margin-top:8px; font-size:11px;">As <b>admin</b> you can change role, name, email, or reset password. Username can be changed but must stay unique.</div>
+    <div class="form-grid" style="margin-top:12px;">
+      <div><label>Username</label><input id="eu_user" class="input" value="${username}" ${username==='admin'?'disabled':''}></div>
+      <div><label>Role</label><select id="eu_role" class="input" ${username==='admin'?'disabled':''}><option ${role==='admin'?'selected':''}>admin</option><option ${role==='headteacher'?'selected':''}>headteacher</option><option ${role==='teacher'?'selected':''}>teacher</option><option ${role==='class_teacher'?'selected':''}>class_teacher</option><option ${role==='subject_teacher'?'selected':''}>subject_teacher</option><option ${role==='bursar'?'selected':''}>bursar</option><option ${role==='nurse'?'selected':''}>nurse</option></select></div>
+      <div><label>Name</label><input id="eu_name" class="input" value="${name||''}"></div>
+      <div><label>Email</label><input id="eu_email" class="input" value="${email||''}" placeholder="optional"></div>
+      <div class="full"><label>New Password (leave blank to keep)</label><input id="eu_pass" type="password" class="input" placeholder="••••••••"></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:14px;"><button class="btn btn-sm" onclick="saveUserEdit(${id})"><i class="ri-save-line"></i> Save Changes</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+}
+async function saveUserEdit(id){
+  const body={};
+  const u=document.getElementById('eu_user'); if(u && !u.disabled) body.username=u.value.trim();
+  const r=document.getElementById('eu_role'); if(r && !r.disabled) body.role=r.value;
+  body.name=document.getElementById('eu_name').value.trim();
+  body.email=document.getElementById('eu_email').value.trim();
+  const p=document.getElementById('eu_pass').value; if(p) body.password=p;
+  try{ await apiPut('/api/users/'+id, body); alert('User updated'); closeModal(); renderBackup(); }catch(e){ alert('Update failed: '+e.message); }
+}
+async function delUser(id, username){
+  if(!confirm(`Delete user "${username}" (ID ${id})? This cannot be undone.`)) return;
+  try{ await apiDel('/api/users/'+id); alert('Deleted '+username); renderBackup(); }catch(e){ alert('Delete failed: '+e.message); }
 }
 async function backupDB(){
   if(!token) return alert('Login first');

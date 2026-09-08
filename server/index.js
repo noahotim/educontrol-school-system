@@ -80,6 +80,31 @@ app.post('/api/register', verify, (req,res)=>{
 });
 app.get('/api/me', verify, (req,res)=> res.json(req.user));
 app.get('/api/users', verify, role('admin','headteacher'), (req,res)=> res.json(db.prepare('SELECT id,username,role,name,email,created_at FROM users').all()));
+app.put('/api/users/:id', verify, role('admin'), (req,res)=>{
+  const {username, role: newRole, name, email, password}=req.body;
+  const id=req.params.id;
+  const user=db.prepare('SELECT * FROM users WHERE id=?').get(id);
+  if(!user) return res.status(404).json({error:'User not found'});
+  if(user.username==='admin' && newRole && newRole!=='admin') return res.status(400).json({error:'Cannot change admin role'});
+  try{
+    if(username && username!==user.username) db.prepare('UPDATE users SET username=? WHERE id=?').run(username, id);
+    if(newRole) db.prepare('UPDATE users SET role=? WHERE id=?').run(newRole, id);
+    if(name!==undefined) db.prepare('UPDATE users SET name=? WHERE id=?').run(name, id);
+    if(email!==undefined) db.prepare('UPDATE users SET email=? WHERE id=?').run(email, id);
+    if(password){ const hash=require('bcryptjs').hashSync(password,10); db.prepare('UPDATE users SET password=? WHERE id=?').run(hash, id); }
+    res.json({ok:true});
+  }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.delete('/api/users/:id', verify, role('admin'), (req,res)=>{
+  const id=req.params.id;
+  const user=db.prepare('SELECT * FROM users WHERE id=?').get(id);
+  if(!user) return res.status(404).json({error:'Not found'});
+  if(user.username==='admin') return res.status(400).json({error:'Cannot delete admin'});
+  db.prepare('DELETE FROM users WHERE id=?').run(id);
+  // also clean assignments
+  try{ db.prepare('DELETE FROM teacher_assignments WHERE user_id=?').run(id); }catch(e){}
+  res.json({ok:true});
+});
 
 // RBAC — who can do what — class_teacher compiles, subject_teacher enters marks (auto-routed)
 const RBAC = {
