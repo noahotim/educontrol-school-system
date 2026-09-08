@@ -265,7 +265,7 @@ window.addEventListener('hashchange', ()=>{
 });
 function toggleSidebar(){ $('#sidebar').classList.toggle('open'); }
 
-// AUTH — hard maintenance: only admin can login when locked
+// AUTH — hard maintenance: only admin can login when locked + must change default password
 async function login(){
   const username=$('#username').value.trim(), password=$('#password').value.trim();
   $('#loginErr').textContent='';
@@ -274,7 +274,6 @@ async function login(){
     const m=await fetch('/api/maintenance').then(r=>r.json());
     if(m.enabled && username!=='admin'){
       try{ const u=await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})}).then(r=>r.json()); if(u.maintenance) throw new Error(u.message); }catch(e){}
-      // Still block with message
       const msg=m.message||'System under HARD maintenance — only admin can login';
       $('#loginErr').innerHTML=`<span style="color:#991b1b; font-weight:700;"><i class="ri-alarm-warning-line"></i> HARD LOCK:</span> ${msg}<br><span class="muted" style="font-size:11px;">Only <b>admin</b> can login now.</span>`;
       checkMaintenance();
@@ -286,10 +285,16 @@ async function login(){
     const j=await r.json();
     if(j.maintenance) throw new Error(j.message||'System under maintenance');
     if(!r.ok) throw new Error(j.error||'Login failed');
+    // Check mustChange — default password must be changed on first login
+    if(j.mustChange || j.user.mustChange){
+      token=j.token; user=j.user;
+      localStorage.setItem('token',token); localStorage.setItem('user',JSON.stringify(user));
+      showChangePasswordModal(true);
+      return;
+    }
     token=j.token; user=j.user;
     localStorage.setItem('token',token); localStorage.setItem('user',JSON.stringify(user));
     showApp();
-    // After login, check if hard maintenance and non-admin should be kicked
     setTimeout(checkMaintenance, 400);
   }catch(e){
     if(e.message.includes('maintenance')||e.message.includes('HARD')){
@@ -298,6 +303,36 @@ async function login(){
       $('#loginErr').textContent=e.message;
     }
   }
+}
+function showChangePasswordModal(isFirst=false){
+  const title=isFirst?'Welcome — Change Default Password':'Change Password';
+  const msg=isFirst?'<div class="alert" style="background:#fef3c7; border:1px solid #f59e0b; color:#92400e; font-size:12px;"><b><i class="ri-lock-2-line"></i> Default password detected (123456).</b><br>You must change it now before using the system. Choose a strong password you will remember.</div>':'';
+  openModal(`<h3><i class="ri-lock-password-line"></i> ${title}</h3>${msg}
+    <div class="form-grid" style="margin-top:12px;">
+      ${!isFirst?`<div class="full"><label>Current Password</label><input id="cp_current" type="password" class="input" placeholder="Current"></div>`:``}
+      <div><label>New Password*</label><input id="cp_new" type="password" class="input" placeholder="Min 4 characters"></div>
+      <div><label>Confirm New*</label><input id="cp_confirm" type="password" class="input" placeholder="Repeat"></div>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:14px;">
+      <button class="btn btn-sm" onclick="doChangePassword(${isFirst})"><i class="ri-check-line"></i> ${isFirst?'Set New Password & Continue':'Change Password'}</button>
+      ${!isFirst?`<button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button>`:``}
+    </div>
+    <div id="cpMsg" style="margin-top:8px; font-size:12px;"></div>`);
+}
+async function doChangePassword(isFirst){
+  const cur=document.getElementById('cp_current')?.value||'';
+  const nw=document.getElementById('cp_new').value;
+  const cf=document.getElementById('cp_confirm').value;
+  const msgEl=document.getElementById('cpMsg');
+  if(!nw || nw.length<4) return msgEl.innerHTML='<span style="color:#dc2626;">New password must be at least 4 characters</span>';
+  if(nw!==cf) return msgEl.innerHTML='<span style="color:#dc2626;">Passwords do not match</span>';
+  if(nw==='123456' || nw==='password') return msgEl.innerHTML='<span style="color:#dc2626;">Cannot use default password — choose a different one</span>';
+  try{
+    const body=isFirst?{newPassword:nw}:{currentPassword:cur, newPassword:nw};
+    const res=await apiPost('/api/change-password', body);
+    msgEl.innerHTML='<span style="color:var(--success);">✓ Password changed — please login again with new password</span>';
+    setTimeout(()=>{ closeModal(); logout(); }, 1200);
+  }catch(e){ msgEl.innerHTML=`<span style="color:#dc2626;">Failed: ${e.message}</span>`; }
 }
 function logout(){ localStorage.clear(); location.reload(); }
 function showApp(){
@@ -2044,25 +2079,39 @@ async function loadMaintenance(){
 }
 let _maintCooldown=false;
 async function toggleMaintenance(enable){
-  if(_maintCooldown) return alert('Please wait 3s between toggles');
+  if(_maintCooldown){
+    const sec=Math.ceil((3000 - (Date.now()-_lastToggleTime))/1000);
+    return alert(`Please wait ${sec}s — kill switch on cooldown to prevent flicker.`);
+  }
   const message=document.getElementById('maintMsg')?.value||'System under maintenance — please try again later';
   const verb=enable?'ENABLE':'DISABLE';
-  if(!confirm(`${verb} maintenance? ${enable?'All non-admin (teacher/bursar/nurse) will be HARD locked (503, cannot login). Only admin stays online.':'System will be live for all roles.'} Continue?`)) return;
-  _maintCooldown=true;
+  if(!confirm(`${verb} HARD maintenance? ${enable?'All non-admin (teacher/bursar/nurse/subject_teacher/class_teacher) will be instantly HARD locked (503, cannot login, signed out). Only admin stays online.':'System will be live for all roles.'} Continue?`)) return;
+  _maintCooldown=true; _lastToggleTime=Date.now();
   const btn=document.querySelector(`button[onclick="toggleMaintenance(${enable})"]`);
   const old=btn?btn.innerHTML:'';
-  if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Switching…';
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Switching…'; }
   try{
     const res=await apiPost('/api/maintenance/toggle', {enabled: enable, message});
-    alert(enable ? '✓ Maintenance HARD ENABLED — non-admin locked (503, cannot login). Only admin can disable.' : '✓ Maintenance DISABLED — system live for all roles.');
+    // Show success with auto-refresh
+    const toast=document.createElement('div');
+    toast.style.cssText='position:fixed; top:20px; right:20px; background:'+(enable?'#fef2f2':'#f0fdf4')+'; border:1px solid '+(enable?'#fecaca':'#bbf7d0')+'; color:'+(enable?'#991b1b':'#166534')+'; padding:12px 16px; border-radius:10px; z-index:9999; box-shadow:0 10px 30px rgba(0,0,0,.15); font-size:13px;';
+    toast.innerHTML=enable ? '<b><i class="ri-alarm-warning-line"></i> HARD LOCK ENABLED</b><br>Non-admin locked, signed out in 5s. Only admin can disable.' : '<b><i class="ri-checkbox-circle-line"></i> System LIVE</b><br>All roles can now login.';
+    document.body.appendChild(toast);
+    setTimeout(()=> toast.remove(), 4000);
     await loadMaintenance();
     await checkMaintenance();
-  } catch(e){ alert('Failed: '+e.message); }
-  finally{
-    if(btn) btn.innerHTML=old;
+  } catch(e){
+    if(e.message.includes('Too fast')||e.message.includes('429')){
+      alert('Kill switch on cooldown — please wait 3 seconds and try again. This prevents flicker from double-clicks.');
+    } else {
+      alert('Failed: '+e.message);
+    }
+  } finally{
+    if(btn){ btn.disabled=false; btn.innerHTML=old; }
     setTimeout(()=> _maintCooldown=false, 3000);
   }
 }
+let _lastToggleTime=0;
 async function loadSchoolLevel(){
   try{
     const s=await fetch('/api/settings/school').then(r=>r.json());

@@ -67,15 +67,37 @@ app.post('/api/login', (req,res)=>{
   const user = db.prepare('SELECT * FROM users WHERE username=?').get(username);
   if(!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({error:'Invalid credentials'});
   const token = sign(user);
-  res.json({token, user:{id:user.id, username:user.username, role:user.role, name:user.name, email:user.email}});
+  const mustChange = !!(user.must_change_password);
+  res.json({token, user:{id:user.id, username:user.username, role:user.role, name:user.name, email:user.email, mustChange}, mustChange});
+});
+app.post('/api/change-password', verify, (req,res)=>{
+  const {currentPassword, newPassword}=req.body;
+  if(!newPassword || newPassword.length<4) return res.status(400).json({error:'New password must be at least 4 characters'});
+  const user=db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+  if(!user) return res.status(404).json({error:'User not found'});
+  if(currentPassword && !require('bcryptjs').compareSync(currentPassword, user.password)){
+    // For first login with default, allow without current if mustChange
+    if(!user.must_change_password) return res.status(400).json({error:'Current password incorrect'});
+  }
+  const hash=require('bcryptjs').hashSync(newPassword,10);
+  db.prepare('UPDATE users SET password=?, must_change_password=0 WHERE id=?').run(hash, req.user.id);
+  res.json({ok:true, note:'Password changed — please login again'});
+});
+app.post('/api/admin/reset-password/:id', verify, role('admin'), (req,res)=>{
+  const {newPassword}=req.body;
+  if(!newPassword) return res.status(400).json({error:'newPassword required'});
+  const hash=require('bcryptjs').hashSync(newPassword,10);
+  db.prepare('UPDATE users SET password=?, must_change_password=1 WHERE id=?').run(hash, req.params.id);
+  res.json({ok:true, note:'Password reset — user must change on next login'});
 });
 app.post('/api/register', verify, (req,res)=>{
   const {username,password,role,name,email} = req.body;
   if(!username||!password) return res.status(400).json({error:'username & password required'});
   const hash = bcrypt.hashSync(password,10);
+  const mustChange = (password==='123456' || password==='password' || password==='admin123') ? 1 : 0;
   try{
-    const r = db.prepare('INSERT INTO users (username,password,role,name,email) VALUES (?,?,?,?,?)').run(username,hash, role||'teacher', name||username, email||'');
-    res.json({id:r.lastInsertRowid});
+    const r = db.prepare('INSERT INTO users (username,password,role,name,email,must_change_password) VALUES (?,?,?,?,?,?)').run(username,hash, role||'teacher', name||username, email||'', mustChange);
+    res.json({id:r.lastInsertRowid, mustChange: !!mustChange, note: mustChange ? 'Default password — user must change on first login' : ''});
   }catch(e){ res.status(400).json({error:e.message});}
 });
 app.get('/api/me', verify, (req,res)=> res.json(req.user));
