@@ -2018,8 +2018,6 @@ setTimeout(checkMaintenance, 1200);
 setInterval(checkMaintenance, 30000);
 const _origShowApp=showApp;
 showApp=function(){ _origShowApp(); setTimeout(checkMaintenance, 600); };
-  apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; }).catch(()=>{ $('#userList').innerHTML=`<div class="alert alert-info">Only admin/headteacher can view users. Your role <b>${user.role}</b> cannot access this.</div>`; });
-}
 function renderRoles(){
   const matrix = [
     {feature:'Dashboard', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'✅', nurse:'✅'},
