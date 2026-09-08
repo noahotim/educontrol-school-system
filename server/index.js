@@ -527,10 +527,18 @@ app.get('/api/sms/preview-bulk-results', verify, authorize('exams','sms','exams:
 
 // Maintenance API — admin kill switch
 app.get('/api/maintenance', (req,res)=>{
+  // If opened in browser directly (navigate), redirect to login with banner instead of JSON
+  const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+  if(acceptsHtml && !req.headers.authorization){
+    return res.redirect('/#login');
+  }
   const h=req.headers.authorization;
   let tok=null; if(h) tok=h.replace('Bearer ','');
   let u=null; if(tok){ try{ const {SECRET}=require('./auth'); const jwt=require('jsonwebtoken'); u=jwt.verify(tok, SECRET); }catch(e){} }
-  if(!u || u.role!=='admin') return res.status(404).send('Not found');
+  if(!u || u.role!=='admin'){
+    if(acceptsHtml) return res.redirect('/#login');
+    return res.status(404).send('Not found');
+  }
   const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
   res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:'', enabled_until: m?m.enabled_until:null});
 });
