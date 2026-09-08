@@ -494,11 +494,15 @@ app.get('/api/maintenance', (req,res)=>{
   const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
   res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:''});
 });
+let _lastToggle=0;
 app.post('/api/maintenance/toggle', verify, authorize('*'), (req,res)=>{
   if(req.user.role!=='admin') return res.status(403).json({error:'Only admin can toggle maintenance'});
+  if(Date.now()-_lastToggle < 3000) return res.status(429).json({error:'Too fast — wait 3s between toggles'});
+  _lastToggle=Date.now();
   const {enabled, message}=req.body;
   const msg=message||'System under maintenance — please try again later';
   db.prepare('UPDATE maintenance SET enabled=?, message=?, enabled_by=?, enabled_at=? WHERE id=1').run(enabled?1:0, msg, req.user.username, new Date().toISOString());
+  console.log(`Maintenance ${enabled?'ON':'OFF'} by ${req.user.username} at ${new Date().toISOString()}`);
   res.json({enabled: !!enabled, message: msg});
 });
 // Scalable school levels — P1-P7 now, S1-S6 ready (100% secure, upgradable)

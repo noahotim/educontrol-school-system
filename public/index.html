@@ -1999,14 +1999,26 @@ async function loadMaintenance(){
     if(msg && m.message) msg.value=m.message;
   } catch(e){ const el=document.getElementById('maintStatus'); if(el) el.textContent='Failed to load: '+e.message; }
 }
+let _maintCooldown=false;
 async function toggleMaintenance(enable){
+  if(_maintCooldown) return alert('Please wait 3s between toggles');
   const message=document.getElementById('maintMsg')?.value||'System under maintenance — please try again later';
-  if(enable && !confirm('Enable maintenance? All non-admin users will be locked out (503). Admin stays online. Continue?')) return;
+  const verb=enable?'ENABLE':'DISABLE';
+  if(!confirm(`${verb} maintenance? ${enable?'All non-admin (teacher/bursar/nurse) will be HARD locked (503, cannot login). Only admin stays online.':'System will be live for all roles.'} Continue?`)) return;
+  _maintCooldown=true;
+  const btn=document.querySelector(`button[onclick="toggleMaintenance(${enable})"]`);
+  const old=btn?btn.innerHTML:'';
+  if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Switching…';
   try{
     const res=await apiPost('/api/maintenance/toggle', {enabled: enable, message});
-    alert(enable ? 'Maintenance ENABLED — non-admin locked (503)' : 'Maintenance DISABLED — system live for all');
-    loadMaintenance();
+    alert(enable ? '✓ Maintenance HARD ENABLED — non-admin locked (503, cannot login). Only admin can disable.' : '✓ Maintenance DISABLED — system live for all roles.');
+    await loadMaintenance();
+    await checkMaintenance();
   } catch(e){ alert('Failed: '+e.message); }
+  finally{
+    if(btn) btn.innerHTML=old;
+    setTimeout(()=> _maintCooldown=false, 3000);
+  }
 }
 async function loadSchoolLevel(){
   try{
