@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: educontrol
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+    # Add disk for SQLite persistence (Render free allows 1GB disk on paid, but free uses ephemeral - add Postgres for production)
+    # For true persistence on free tier, switch to Neon Postgres (replace better-sqlite3 with pg) OR add disk when you upgrade.
+    # Alternative free DB: https://neon.tech (free Postgres) — set DATABASE_URL and migrate.

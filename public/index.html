@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduControl - ONE SCHOOL. ONE SYSTEM.</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+:root{--primary:#1e40af;--primary2:#3b82f6;--accent:#f59e0b;--bg:#f1f5f9;--card:#fff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--success:#10b981;--danger:#ef4444}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,sans-serif;background:var(--bg);color:var(--text)}
+a{color:inherit;text-decoration:none}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1e3a8a 0%,#3b82f6 50%,#06b6d4 100%);padding:20px}
+.login-card{background:#fff;border-radius:20px;padding:36px 32px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.login-card h1{font-family:Plus Jakarta Sans,sans-serif;font-size:22px;font-weight:800;color:var(--primary);text-align:center}
+.login-card .sub{color:var(--muted);text-align:center;font-size:13px;margin:6px 0 20px}
+.input{width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:14px;outline:none}
+.input:focus{border-color:var(--primary2);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.btn{width:100%;padding:12px;background:var(--primary);color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px}
+.btn:hover{background:#1e3a8a}
+.btn-sm{padding:8px 14px;width:auto;font-size:13px;border-radius:8px}
+.btn-outline{background:#fff;color:var(--primary);border:1px solid var(--border)}
+.btn-success{background:var(--success)} .btn-danger{background:var(--danger)}
+.app{display:none;height:100vh;overflow:hidden}
+.sidebar{width:270px;background:#0f172a;color:#cbd5e1;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-head{padding:20px 18px;border-bottom:1px solid #1e293b}
+.sidebar-head h2{font-size:15px;color:#fff;display:flex;gap:8px;align-items:center}
+.sidebar-head p{font-size:11px;color:#94a3b8;margin-top:4px;letter-spacing:.08em}
+.nav{flex:1;overflow:auto;padding:10px}
+.nav-section{font-size:10px;letter-spacing:.12em;color:#64748b;margin:14px 10px 6px;font-weight:700}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:500;color:#cbd5e1;margin-bottom:2px}
+.nav-item:hover{background:#1e293b;color:#fff}
+.nav-item.active{background:var(--primary);color:#fff}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:64px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:12px}
+.topbar h3{font-size:16px;font-weight:700}
+.chip{font-size:11px;padding:4px 8px;border-radius:999px;background:#e0f2fe;color:#0369a1;font-weight:700}
+.content{flex:1;overflow:auto;padding:20px;background:var(--bg)}
+.grid{display:grid;gap:16px}
+.grid4{grid-template-columns:repeat(4,1fr)}
+.grid3{grid-template-columns:repeat(3,1fr)}
+.grid2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:1100px){.grid4{grid-template-columns:repeat(2,1fr)} .grid3{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:700px){.grid4,.grid3,.grid2{grid-template-columns:1fr} .sidebar{position:fixed;left:-300px;top:0;bottom:0;z-index:50;transition:.25s} .sidebar.open{left:0}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px}
+.stat{display:flex;align-items:center;justify-content:space-between}
+.stat-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f8fafc;text-align:left;padding:10px 12px;font-weight:700;color:var(--muted);white-space:nowrap;border-bottom:1px solid var(--border)}
+td{padding:10px 12px;border-bottom:1px solid #f1f5f9;white-space:nowrap}
+.badge{padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700}
+.badge-green{background:#dcfce7;color:#166534} .badge-red{background:#fee2e2;color:#991b1b} .badge-amber{background:#fef3c7;color:#92400e} .badge-blue{background:#dbeafe;color:#1e40af}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.search{flex:1;min-width:180px;position:relative}
+.search i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.search input{width:100%;padding:10px 12px 10px 34px;border:1px solid var(--border);border-radius:10px;font-size:13px}
+.modal{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal.open{display:flex}
+.modal-card{background:#fff;border-radius:16px;width:100%;max-width:560px;max-height:90vh;overflow:auto;padding:20px}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.form-grid .full{grid-column:1/-1}
+label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px}
+.kpi{font-size:22px;font-weight:800}
+.muted{color:var(--muted);font-size:13px}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tab{padding:8px 12px;border-radius:999px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:13px;font-weight:600}
+.tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.alert{padding:10px 12px;border-radius:10px;font-size:13px;margin-bottom:12px}
+.alert-info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+</style>
+</head>
+<body>
+
+<div id="loginView" class="login-wrap">
+  <div class="login-card">
+    <div style="text-align:center;margin-bottom:10px"><span style="background:var(--primary);color:#fff;padding:6px 10px;border-radius:10px;font-weight:800;letter-spacing:.06em">EDUCONTROL</span></div>
+    <h1>ONE SCHOOL. ONE SYSTEM.</h1>
+    <p class="sub">Complete Control — Academic • Finance • Medical • Transport</p>
+    <div style="display:grid;gap:12px">
+      <input id="username" class="input" placeholder="Username" value="admin">
+      <input id="password" class="input" type="password" placeholder="Password" value="admin123">
+      <button class="btn" onclick="login()">Sign In →</button>
+      <p style="font-size:11px;color:var(--muted);text-align:center">Demo: <b>admin / admin123</b> • bursar / bursar123 • teacher1 / teacher123 • nurse / nurse123</p>
+      <p id="loginErr" style="color:var(--danger);font-size:13px;text-align:center"></p>
+    </div>
+    <div style="margin-top:14px;background:#f8fafc;border:1px dashed var(--border);border-radius:10px;padding:10px;font-size:11px;color:var(--muted)">
+      <b>Best Free Hosting:</b> <span style="color:var(--primary);font-weight:700">Render</span> (full-stack + DB) — recommended. Also supports Vercel + Neon Postgres or Firebase. GitHub Pages / Netlify are static-only — not suitable for this system.
+    </div>
+  </div>
+</div>
+
+<div id="appView" class="app">
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-head">
+      <h2><i class="ri-school-line"></i> EDUCONTROL</h2>
+      <p>COMPLETE SCHOOL SYSTEM</p>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+        <img id="userAvatar" src="https://ui-avatars.com/api/?name=Admin&background=1e40af&color=fff" style="width:28px;height:28px;border-radius:50%">
+        <div><div id="userName" style="font-size:13px;color:#fff;font-weight:700">Admin</div><div id="userRole" style="font-size:11px;color:#94a3b8">admin</div></div>
+      </div>
+    </div>
+    <div class="nav" id="nav"></div>
+    <div style="padding:12px;border-top:1px solid #1e293b"><button class="btn btn-sm" style="background:#1e293b;width:100%" onclick="logout()"><i class="ri-logout-line"></i> Logout</button></div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <div style="display:flex;gap:10px;align-items:center">
+        <button onclick="toggleSidebar()" style="display:none" id="menuBtn" class="btn btn-sm btn-outline"><i class="ri-menu-line"></i></button>
+        <h3 id="pageTitle">Dashboard</h3><span id="pageChip" class="chip">Live</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="muted" id="todayStr"></span>
+        <button class="btn btn-sm btn-outline" onclick="backupDB()"><i class="ri-download-line"></i> Backup</button>
+      </div>
+    </div>
+    <div id="content" class="content"></div>
+  </div>
+</div>
+
+<div id="modal" class="modal" onclick="if(event.target===this) closeModal()"><div id="modalCard" class="modal-card"></div></div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('token');
+let user = JSON.parse(localStorage.getItem('user')||'null');
+const $ = s=> document.querySelector(s);
+function authHeader(){ return { 'Authorization':'Bearer '+token, 'Content-Type':'application/json' }; }
+function fmt(n){ return Number(n||0).toLocaleString(); }
+function fmtMoney(n){ return 'UGX '+Number(n||0).toLocaleString(); }
+function today(){ return new Date().toISOString().slice(0,10); }
+
+const navItems=[
+  {id:'dashboard', label:'Dashboard', icon:'ri-dashboard-line', section:'OVERVIEW'},
+  {id:'students', label:'Students', icon:'ri-team-line', section:'ACADEMIC'},
+  {id:'attendance', label:'Attendance', icon:'ri-calendar-check-line'},
+  {id:'classes', label:'Classes & Promotion', icon:'ri-building-line'},
+  {id:'exams', label:'Exams & Results', icon:'ri-file-list-3-line'},
+  {id:'reportcards', label:'Report Cards', icon:'ri-article-line'},
+  {id:'aitutor', label:'AI Tutor', icon:'ri-robot-line'},
+  {id:'staff', label:'Staff', icon:'ri-user-star-line', section:'STAFF'},
+  {id:'payroll', label:'Payroll', icon:'ri-money-dollar-circle-line'},
+  {id:'fees', label:'Fees & Payments', icon:'ri-wallet-3-line', section:'FINANCE'},
+  {id:'expenses', label:'Expenses & Income', icon:'ri-exchange-dollar-line'},
+  {id:'reports', label:'Financial Reports', icon:'ri-bar-chart-line'},
+  {id:'procurement', label:'Procurement', icon:'ri-shopping-cart-line', section:'PROCUREMENT'},
+  {id:'inventory', label:'Stock & Inventory', icon:'ri-stack-line'},
+  {id:'sickbay', label:'Sickbay', icon:'ri-heart-pulse-line', section:'SICKBAY'},
+  {id:'transport', label:'Transport', icon:'ri-bus-line', section:'TRANSPORT'},
+  {id:'events', label:'Events', icon:'ri-calendar-event-line', section:'EVENTS'},
+  {id:'sms', label:'SMS & Comms', icon:'ri-message-3-line', section:'COMMUNICATION'},
+  {id:'backup', label:'Backup & Security', icon:'ri-shield-keyhole-line', section:'SYSTEM'},
+];
+
+function renderNav(){
+  const nav=$('#nav'); nav.innerHTML='';
+  navItems.forEach(it=>{
+    if(it.section){ const s=document.createElement('div'); s.className='nav-section'; s.textContent=it.section; nav.appendChild(s); }
+    const d=document.createElement('div'); d.className='nav-item'; d.id='nav-'+it.id; d.innerHTML=`<i class="${it.icon}"></i> ${it.label}`; d.onclick=()=> navigate(it.id); nav.appendChild(d);
+  });
+}
+function navigate(id){
+  document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
+  const el=document.getElementById('nav-'+id); if(el) el.classList.add('active');
+  $('#pageTitle').textContent = navItems.find(n=>n.id===id)?.label || id;
+  const map={dashboard:renderDashboard, students:renderStudents, attendance:renderAttendance, classes:renderClasses, exams:renderExams, reportcards:renderReportCards, aitutor:renderAITutor, staff:renderStaff, payroll:renderPayroll, fees:renderFees, expenses:renderExpenses, reports:renderReports, procurement:renderProcurement, inventory:renderInventory, sickbay:renderSickbay, transport:renderTransport, events:renderEvents, sms:renderSMS, backup:renderBackup};
+  (map[id]||renderDashboard)();
+  if(window.innerWidth<700) $('#sidebar').classList.remove('open');
+}
+function toggleSidebar(){ $('#sidebar').classList.toggle('open'); }
+
+// AUTH
+async function login(){
+  const username=$('#username').value.trim(), password=$('#password').value.trim();
+  $('#loginErr').textContent='';
+  try{
+    const r=await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})});
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||'Login failed');
+    token=j.token; user=j.user;
+    localStorage.setItem('token',token); localStorage.setItem('user',JSON.stringify(user));
+    showApp();
+  }catch(e){ $('#loginErr').textContent=e.message; }
+}
+function logout(){ localStorage.clear(); location.reload(); }
+function showApp(){
+  if(!token){ $('#loginView').style.display='flex'; $('#appView').style.display='none'; return;}
+  $('#loginView').style.display='none'; $('#appView').style.display='flex';
+  $('#userName').textContent=user.name||user.username; $('#userRole').textContent=user.role; $('#userAvatar').src=`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name||user.username)}&background=1e40af&color=fff`;
+  renderNav(); navigate('dashboard'); $('#todayStr').textContent=new Date().toDateString();
+  if(window.innerWidth<700) $('#menuBtn').style.display='inline-flex';
+}
+async function apiGet(url){ const r=await fetch(url,{headers:authHeader()}); if(r.status===401){logout(); throw new Error('Unauthorized')} return r.json(); }
+async function apiPost(url,body){ const r=await fetch(url,{method:'POST', headers:authHeader(), body:JSON.stringify(body)}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error'); return j; }
+async function apiPut(url,body){ const r=await fetch(url,{method:'PUT', headers:authHeader(), body:JSON.stringify(body)}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error'); return j; }
+async function apiDel(url){ const r=await fetch(url,{method:'DELETE', headers:authHeader()}); const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error'); return j; }
+
+// MODAL
+function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
+function closeModal(){ $('#modal').classList.remove('open'); }
+
+// DASHBOARD
+async function renderDashboard(){
+  const d=await apiGet('/api/dashboard');
+  $('#content').innerHTML=`
+  <div class="grid grid4">
+    <div class="card stat"><div><div class="muted">Total Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">Active</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
+    <div class="card stat"><div><div class="muted">Staff</div><div class="kpi">${fmt(d.staff)}</div><div class="muted">Payroll ready</div></div><div class="stat-icon" style="background:#dcfce7;color:#166534"><i class="ri-user-star-line"></i></div></div>
+    <div class="card stat"><div><div class="muted">Fees Collected</div><div class="kpi">${fmtMoney(d.fees)}</div><div class="muted">Term I</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-wallet-3-line"></i></div></div>
+    <div class="card stat"><div><div class="muted">Expenses</div><div class="kpi">${fmtMoney(d.expenses)}</div><div class="muted">Balance ${fmtMoney(d.fees-d.expenses)}</div></div><div class="stat-icon" style="background:#fee2e2;color:#991b1b"><i class="ri-exchange-dollar-line"></i></div></div>
+  </div>
+  <div class="grid grid4" style="margin-top:16px">
+    <div class="card"><div class="muted">Present Today</div><div class="kpi" style="color:var(--success)">${fmt(d.attendanceToday)}</div></div>
+    <div class="card"><div class="muted">Low Stock Items</div><div class="kpi" style="color:var(--danger)">${fmt(d.lowStock)}</div></div>
+    <div class="card"><div class="muted">Sickbay Visits Today</div><div class="kpi">${fmt(d.sickVisits)}</div></div>
+    <div class="card"><div class="muted">Transport / Events</div><div class="kpi">${fmt(d.transport)} / ${fmt(d.events)}</div></div>
+  </div>
+  <div class="grid grid2" style="margin-top:16px">
+    <div class="card"><h4>Fees Trend (last 6 months)</h4><canvas id="c1" height="140"></canvas></div>
+    <div class="card"><h4>Students by Class</h4><canvas id="c2" height="140"></canvas></div>
+  </div>
+  <div class="grid grid2" style="margin-top:16px">
+    <div class="card"><h4>Expenses by Category</h4><canvas id="c3" height="140"></canvas></div>
+    <div class="card"><h4>Attendance (last 7 days)</h4><canvas id="c4" height="140"></canvas></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h4>Quick Actions</h4>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn btn-sm" onclick="navigate('students')">+ Admit Student</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('attendance')">Mark Attendance</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('fees')">Record Payment</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('exams')">Enter Results</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('sms')">Send SMS</button>
+    </div>
+  </div>`;
+  setTimeout(()=>{
+    new Chart($('#c1'),{type:'bar',data:{labels:d.feesByMonth.map(x=>x.m), datasets:[{label:'UGX', data:d.feesByMonth.map(x=>x.total), backgroundColor:'#3b82f6'}]}, options:{plugins:{legend:{display:false}}}});
+    new Chart($('#c2'),{type:'doughnut',data:{labels:d.studentsByClass.map(x=>x.class), datasets:[{data:d.studentsByClass.map(x=>x.count), backgroundColor:['#1e40af','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6']}]}, options:{plugins:{legend:{position:'bottom'}}}});
+    new Chart($('#c3'),{type:'pie',data:{labels:d.expensesByCat.map(x=>x.category||'General'), datasets:[{data:d.expensesByCat.map(x=>x.total), backgroundColor:['#f59e0b','#ef4444','#10b981','#3b82f6']}]}, options:{plugins:{legend:{position:'bottom'}}}});
+    new Chart($('#c4'),{type:'line',data:{labels:d.attendanceTrend.map(x=>x.date), datasets:[{label:'Present', data:d.attendanceTrend.map(x=>x.present), borderColor:'#10b981', tension:.4, fill:true, backgroundColor:'rgba(16,185,129,.15)'}]}, options:{plugins:{legend:{display:false}}}});
+  },100);
+}
+
+// STUDENTS
+async function renderStudents(){
+  const students=await apiGet('/api/students');
+  const classes=await apiGet('/api/classes');
+  $('#content').innerHTML=`
+  <div class="toolbar">
+    <div class="search"><i class="ri-search-line"></i><input id="stuQ" placeholder="Search name, admission no, class..." oninput="filterStudents()"></div>
+    <button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit Student</button>
+    <button class="btn btn-sm btn-outline" onclick="exportStudentsCSV()">Export CSV</button>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th></th></tr></thead><tbody id="stuBody">${students.map(s=>`<tr data-q="${(s.first_name+' '+s.last_name+' '+s.admission_no+' '+s.class).toLowerCase()}"><td>${s.admission_no}</td><td><b>${s.first_name} ${s.last_name}</b><div class="muted" style="font-size:11px">${s.dob||''}</div></td><td><span class="badge badge-blue">${s.class||'-'}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="openStudentModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delStudent(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
+  <div class="muted" style="margin-top:8px">${students.length} students • Classes: ${classes.map(c=>c.name).join(', ')}</div>`;
+}
+function filterStudents(){ const q=$('#stuQ').value.toLowerCase(); document.querySelectorAll('#stuBody tr').forEach(tr=> tr.style.display = tr.dataset.q.includes(q)?'':'none'); }
+function openStudentModal(id){
+  const isEdit=!!id;
+  const load = isEdit? apiGet('/api/students/'+id) : Promise.resolve({});
+  load.then(s=>{
+    openModal(`<h3>${isEdit?'Edit':'Admit'} Student</h3><div class="form-grid" style="margin-top:12px">
+      <div><label>First Name*</label><input id="f_first" class="input" value="${s.first_name||''}"></div>
+      <div><label>Last Name*</label><input id="f_last" class="input" value="${s.last_name||''}"></div>
+      <div><label>Admission No</label><input id="f_adm" class="input" value="${s.admission_no||''}" placeholder="Auto"></div>
+      <div><label>Class</label><input id="f_class" class="input" value="${s.class||''}" placeholder="P5"></div>
+      <div><label>Gender</label><select id="f_gender" class="input"><option ${s.gender==='Male'?'selected':''}>Male</option><option ${s.gender==='Female'?'selected':''}>Female</option></select></div>
+      <div><label>DOB</label><input id="f_dob" type="date" class="input" value="${s.dob||''}"></div>
+      <div><label>Parent Name</label><input id="f_parent" class="input" value="${s.parent_name||''}"></div>
+      <div><label>Parent Phone</label><input id="f_phone" class="input" value="${s.parent_phone||''}"></div>
+      <div class="full"><label>Address</label><input id="f_addr" class="input" value="${s.address||''}"></div>
+    </div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="saveStudent(${id||0})">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  });
+}
+async function saveStudent(id){
+  const body={first_name:$('#f_first').value, last_name:$('#f_last').value, admission_no:$('#f_adm').value||undefined, class:$('#f_class').value, gender:$('#f_gender').value, dob:$('#f_dob').value, parent_name:$('#f_parent').value, parent_phone:$('#f_phone').value, address:$('#f_addr').value};
+  if(!body.first_name||!body.last_name) return alert('First & Last name required');
+  try{ if(id) await apiPut('/api/students/'+id, body); else await apiPost('/api/students', body); closeModal(); renderStudents(); }catch(e){alert(e.message)}
+}
+async function delStudent(id){ if(!confirm('Delete student?')) return; await apiDel('/api/students/'+id); renderStudents(); }
+function exportStudentsCSV(){ window.open('/api/students', '_blank'); alert('Use browser print or copy. For full CSV, backend supports CSV export via API extension.'); }
+
+// ATTENDANCE
+async function renderAttendance(){
+  const classes=await apiGet('/api/classes');
+  $('#content').innerHTML=`
+  <div class="toolbar">
+    <input id="attDate" type="date" class="input" style="width:auto" value="${today()}">
+    <select id="attClass" class="input" style="width:auto"><option value="">All Classes</option>${classes.map(c=>`<option>${c.name}</option>`).join('')}</select>
+    <button class="btn btn-sm btn-outline" onclick="loadAttendance()">Load</button>
+    <button class="btn btn-sm" onclick="saveAttendance()">Save Attendance</button>
+  </div>
+  <div id="attWrap" class="table-wrap"><div class="muted" style="padding:20px">Select date & class and click Load</div></div>
+  <div style="margin-top:12px" class="card"><h4>Attendance Log</h4><div id="attLog" class="muted">Loading...</div></div>`;
+  loadAttendanceLog();
+}
+async function loadAttendance(){
+  const date=$('#attDate').value, cls=$('#attClass').value;
+  const students=await apiGet('/api/students'+(cls?`?q=${encodeURIComponent(cls)}`:''));
+  const filtered = cls? students.filter(s=> s.class===cls) : students;
+  if(filtered.length===0) return $('#attWrap').innerHTML='<div class="muted" style="padding:20px">No students in this class</div>';
+  $('#attWrap').innerHTML=`<table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Status</th></tr></thead><tbody>${filtered.map(s=>`<tr><td>${s.admission_no}</td><td>${s.first_name} ${s.last_name}</td><td>${s.class}</td><td><select class="input attSel" data-id="${s.id}" style="padding:6px"><option value="Present" selected>Present</option><option value="Absent">Absent</option><option value="Late">Late</option><option value="Sick">Sick</option></select></td></tr>`).join('')}</tbody></table>`;
+}
+async function saveAttendance(){
+  const date=$('#attDate').value;
+  const sels=document.querySelectorAll('.attSel');
+  if(sels.length===0) return alert('Load students first');
+  const records=[...sels].map(e=> ({student_id: parseInt(e.dataset.id), status:e.value}));
+  await apiPost('/api/attendance/bulk',{date, records});
+  alert('Attendance saved for '+date); loadAttendanceLog();
+}
+async function loadAttendanceLog(){
+  const logs=await apiGet('/api/attendance');
+  $('#attLog').innerHTML= logs.length? `<div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Class</th><th>Status</th></tr></thead><tbody>${logs.slice(0,30).map(l=>`<tr><td>${l.date}</td><td>${l.first_name} ${l.last_name}</td><td>${l.class}</td><td><span class="badge ${l.status==='Present'?'badge-green':'badge-red'}">${l.status}</span></td></tr>`).join('')}</tbody></table></div>` : 'No records yet';
+}
+
+// CLASSES & PROMOTION
+async function renderClasses(){
+  const classes=await apiGet('/api/classes');
+  const students=await apiGet('/api/students');
+  const byClass={}; students.forEach(s=> byClass[s.class]=(byClass[s.class]||0)+1);
+  $('#content').innerHTML=`
+  <div class="grid grid2">
+    <div class="card"><h4>Classes</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Class</th><th>Capacity</th><th>Enrolled</th><th>Room</th></tr></thead><tbody>${classes.map(c=>`<tr><td><b>${c.name}</b></td><td>${c.capacity||40}</td><td>${byClass[c.name]||0}</td><td>${c.room||'-'}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="card"><h4>Promote Students</h4><div class="alert alert-info">Moves all students from one class to next (e.g., P5 → P6). Uses promotions log.</div>
+      <div class="form-grid"><div><label>From Class</label><select id="p_from" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div><div><label>To Class</label><select id="p_to" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div><div><label>Year</label><input id="p_year" class="input" value="2026"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" onclick="doPromote()">Promote Now</button></div></div>
+      <h4 style="margin-top:14px">Add New Class</h4><div style="display:flex;gap:8px;margin-top:8px"><input id="newClass" class="input" placeholder="e.g., P8"><button class="btn btn-sm" onclick="addClass()">Add</button></div>
+    </div>
+  </div>`;
+}
+async function doPromote(){ const from=$('#p_from').value, to=$('#p_to').value, year=$('#p_year').value; if(from===to) return alert('Same class'); const r=await apiPost('/api/promote',{from_class:from,to_class:to,year}); alert(`Promoted ${r.promoted} students`); renderClasses(); }
+async function addClass(){ const name=$('#newClass').value.trim(); if(!name) return; await apiPost('/api/classes',{name}); renderClasses(); }
+
+// EXAMS & RESULTS
+async function renderExams(){
+  const exams=await apiGet('/api/exams');
+  const students=await apiGet('/api/students');
+  $('#content').innerHTML=`
+  <div class="toolbar"><button class="btn btn-sm" onclick="openExamModal()">+ Create Exam</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Exam</th><th>Term</th><th>Year</th><th>Class</th><th>Date</th><th></th></tr></thead><tbody>${exams.map(e=>`<tr><td><b>${e.name}</b></td><td>${e.term||''}</td><td>${e.year||''}</td><td>${e.class||''}</td><td>${e.date||''}</td><td><button class="btn btn-sm btn-outline" onclick="openResultModal(${e.id},'${e.name.replace(/'/g,'')}')">Enter Results</button> <button class="btn btn-sm btn-outline" onclick="viewResults(${e.id})">View</button> <button class="btn btn-sm btn-danger" onclick="delExam(${e.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
+  <div id="resView" style="margin-top:16px"></div>`;
+}
+function openExamModal(){ openModal(`<h3>Create Exam</h3><div class="form-grid" style="margin-top:12px"><div><label>Name</label><input id="e_name" class="input" placeholder="End of Term I"></div><div><label>Class</label><input id="e_class" class="input" placeholder="P7"></div><div><label>Term</label><input id="e_term" class="input" value="Term I"></div><div><label>Year</label><input id="e_year" class="input" value="2026"></div><div><label>Date</label><input id="e_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="saveExam()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveExam(){ const body={name:$('#e_name').value, class:$('#e_class').value, term:$('#e_term').value, year:$('#e_year').value, date:$('#e_date').value}; if(!body.name) return alert('Name required'); await apiPost('/api/exams',body); closeModal(); renderExams(); }
+async function delExam(id){ if(!confirm('Delete exam & results?')) return; await apiDel('/api/exams/'+id); renderExams(); }
+async function openResultModal(examId, examName){
+  const subjects=await apiGet('/api/subjects');
+  const students=await apiGet('/api/students');
+  openModal(`<h3>Enter Results — ${examName}</h3><div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select><div class="muted" style="margin:8px 0">Enter marks (0-100) per student. Grade auto-calculated.</div><div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>Adm</th><th>Name</th><th>Class</th><th>Marks</th></tr></thead><tbody>${students.slice(0,30).map(s=>`<tr><td>${s.admission_no}</td><td>${s.first_name} ${s.last_name}</td><td>${s.class}</td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" style="padding:6px;width:80px"></td></tr>`).join('')}</tbody></table></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveResults(${examId})">Save Results</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+}
+async function saveResults(examId){
+  const subject=$('#r_sub').value;
+  const entries=[...document.querySelectorAll('.rMark')].filter(e=> e.value!=='').map(e=> ({student_id:parseInt(e.dataset.id), marks: parseFloat(e.value)}));
+  if(entries.length===0) return alert('Enter at least one mark');
+  await apiPost('/api/results/bulk',{exam_id:examId, subject, entries});
+  alert('Saved '+entries.length+' results'); closeModal();
+}
+async function viewResults(examId){
+  const rows=await apiGet('/api/results?exam_id='+examId);
+  $('#resView').innerHTML=`<div class="card"><h4>Results (${rows.length})</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.first_name} ${r.last_name}</td><td>${r.class}</td><td>${r.subject}</td><td>${r.marks}</td><td><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div></div>`;
+}
+
+// REPORT CARDS
+async function renderReportCards(){
+  const students=await apiGet('/api/students');
+  const exams=await apiGet('/api/exams');
+  $('#content').innerHTML=`
+  <div class="card"><h4>Automatic Report Cards</h4><p class="muted">Select student & exam to generate printable report card (grades + average + position).</p>
+    <div class="form-grid" style="margin-top:12px"><div><label>Student</label><select id="rc_stu" class="input">${students.map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class} (${s.admission_no})</option>`).join('')}</select></div><div><label>Exam</label><select id="rc_exam" class="input">${exams.map(e=>`<option value="${e.id}">${e.name} ${e.year} ${e.term}</option>`).join('')}</select></div></div>
+    <button class="btn btn-sm" style="margin-top:12px" onclick="genReportCard()">Generate Report Card</button>
+    <div id="rcOut" style="margin-top:16px"></div>
+  </div>`;
+}
+async function genReportCard(){
+  const sid=$('#rc_stu').value, eid=$('#rc_exam').value;
+  const stu=await apiGet('/api/students/'+sid);
+  const results=await apiGet('/api/results?exam_id='+eid+'&student_id='+sid);
+  const allResults=await apiGet('/api/results?exam_id='+eid);
+  // compute average and ranking
+  const avg = results.length? (results.reduce((a,b)=>a+b.marks,0)/results.length).toFixed(1) : '0';
+  // ranking: group by student
+  const map={}; allResults.forEach(r=> { map[r.student_id]=(map[r.student_id]||0)+r.marks; });
+  const totals=Object.entries(map).map(([k,v])=> ({id:parseInt(k), total:v, count: allResults.filter(x=>x.student_id==k).length})).map(x=> ({...x, avg:x.total/x.count})).sort((a,b)=> b.avg-a.avg);
+  const pos = totals.findIndex(t=> t.id==sid)+1;
+  const grade = avg>=80?'D1':avg>=60?'Credit':avg>=40?'Pass':'Fail';
+  $('#rcOut').innerHTML=`
+  <div class="card" style="border:2px solid var(--primary);background:#fff" id="printCard">
+    <div style="text-align:center;border-bottom:2px solid var(--primary);padding-bottom:10px"><h2 style="color:var(--primary)">EDUCONTROL ACADEMY</h2><p class="muted">P.O Box 123, Kampala • Tel: 0772 000000 • Motto: Knowledge is Power</p><h3 style="margin-top:8px">REPORT CARD — ${document.querySelector('#rc_exam option:checked').textContent}</h3></div>
+    <div class="grid grid3" style="margin-top:12px"><div><b>Student:</b> ${stu.first_name} ${stu.last_name}</div><div><b>Adm No:</b> ${stu.admission_no}</div><div><b>Class:</b> ${stu.class}</div></div>
+    <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>Subject</th><th>Marks</th><th>Grade</th><th>Remarks</th></tr></thead><tbody>${results.length?results.map(r=>`<tr><td>${r.subject}</td><td>${r.marks}</td><td>${r.grade}</td><td>${r.marks>=50?'Good':'Needs improvement'}</td></tr>`).join(''):`<tr><td colspan=4 class="muted">No results for this exam yet. Enter results first.</td></tr>`}</tbody></table></div>
+    <div class="grid grid3" style="margin-top:12px"><div class="card" style="background:#f8fafc"><div class="muted">Average</div><div class="kpi">${avg}%</div></div><div class="card" style="background:#f8fafc"><div class="muted">Grade</div><div class="kpi">${grade}</div></div><div class="card" style="background:#f8fafc"><div class="muted">Position</div><div class="kpi">${pos||'-'} / ${totals.length}</div></div></div>
+    <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:13px"><span>Class Teacher: _______________</span><span>Head Teacher: _______________</span></div>
+    <button class="btn btn-sm" style="margin-top:12px" onclick="window.print()">Print Report Card</button>
+  </div>`;
+}
+
+// AI TUTOR
+function renderAITutor(){
+  $('#content').innerHTML=`
+  <div class="grid grid2">
+    <div class="card"><h4><i class="ri-robot-line"></i> AI Tutor — Personalized Learning</h4><p class="muted" style="margin:8px 0">Ask anything: Math, Science, English, revision plans. Auto-personalized from student's performance.</p>
+      <label>Student (optional for personalization)</label><select id="ai_stu" class="input"><option value="">-- General --</option></select>
+      <textarea id="ai_q" class="input" rows="3" placeholder="e.g., Explain photosynthesis for P6, Help me with fractions, Make a study timetable for PLE" style="margin-top:8px"></textarea>
+      <button class="btn btn-sm" style="margin-top:10px" onclick="askAI()">Ask AI Tutor</button>
+      <div id="aiAns" style="margin-top:12px"></div>
+    </div>
+    <div class="card"><h4>Performance Analysis</h4><div id="perfOut" class="muted">Select student on left or view class analytics below.</div>
+      <button class="btn btn-sm btn-outline" style="margin-top:10px" onclick="loadPerf()">Load Class Analytics</button><div id="perfChartWrap" style="margin-top:12px"><canvas id="perfChart" height="160"></canvas></div>
+    </div>
+  </div>`;
+  apiGet('/api/students').then(list=>{ const s=$('#ai_stu'); list.forEach(st=>{ const o=document.createElement('option'); o.value=st.id; o.textContent=st.first_name+' '+st.last_name+' ('+st.class+')'; s.appendChild(o); }); });
+}
+async function askAI(){
+  const question=$('#ai_q').value.trim(); if(!question) return alert('Type a question');
+  $('#aiAns').innerHTML='<div class="muted">Thinking...</div>';
+  const r=await apiPost('/api/ai-tutor',{question, student_id: $('#ai_stu').value||undefined});
+  $('#aiAns').innerHTML=`<div class="card" style="background:#f0f9ff;border-color:#bfdbfe"><b>AI Tutor:</b><p style="margin-top:6px;white-space:pre-wrap">${r.answer}</p></div>`;
+}
+async function loadPerf(){
+  const rows=await apiGet('/api/results');
+  // avg by subject
+  const bySub={}; rows.forEach(r=>{ if(!bySub[r.subject]) bySub[r.subject]={sum:0,n:0}; bySub[r.subject].sum+=r.marks; bySub[r.subject].n++; });
+  const labels=Object.keys(bySub), data=labels.map(k=> (bySub[k].sum/bySub[k].n).toFixed(1));
+  $('#perfOut').innerHTML= labels.length? labels.map((k,i)=> `${k}: <b>${data[i]}%</b>`).join(' • ') : 'No results yet. Enter exams & results first.';
+  if(labels.length) new Chart($('#perfChart'),{type:'bar', data:{labels, datasets:[{label:'Avg %', data, backgroundColor:'#10b981'}]}, options:{plugins:{legend:{display:false}}}});
+}
+
+// STAFF
+async function renderStaff(){
+  const staff=await apiGet('/api/staff');
+  $('#content').innerHTML=`
+  <div class="toolbar"><button class="btn btn-sm" onclick="openStaffModal()"><i class="ri-add-line"></i> Add Staff</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Staff No</th><th>Name</th><th>Dept</th><th>Role</th><th>Salary</th><th>Status</th><th></th></tr></thead><tbody>${staff.map(s=>`<tr><td>${s.staff_no}</td><td><b>${s.name}</b><div class="muted" style="font-size:11px">${s.email||''} • ${s.phone||''}</div></td><td>${s.department||''}</td><td>${s.role||''}</td><td>${fmtMoney(s.salary)}</td><td><span class="badge badge-green">${s.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="openStaffModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delStaff(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function openStaffModal(id){
+  const load=id? apiGet('/api/staff/'+id) : Promise.resolve({});
+  load.then(s=>{
+    openModal(`<h3>${id?'Edit':'Add'} Staff</h3><div class="form-grid" style="margin-top:12px">
+      <div><label>Staff No</label><input id="st_no" class="input" value="${s.staff_no||''}" placeholder="STF006"></div><div><label>Name*</label><input id="st_name" class="input" value="${s.name||''}"></div>
+      <div><label>Department</label><input id="st_dep" class="input" value="${s.department||''}"></div><div><label>Role</label><input id="st_role" class="input" value="${s.role||''}"></div>
+      <div><label>Phone</label><input id="st_phone" class="input" value="${s.phone||''}"></div><div><label>Email</label><input id="st_email" class="input" value="${s.email||''}"></div>
+      <div><label>Salary (UGX)</label><input id="st_sal" type="number" class="input" value="${s.salary||0}"></div><div><label>Qualification</label><input id="st_qual" class="input" value="${s.qualification||''}"></div>
+    </div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="saveStaff(${id||0})">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  });
+}
+async function saveStaff(id){
+  const body={staff_no:$('#st_no').value||'STF'+Date.now().toString().slice(-4), name:$('#st_name').value, department:$('#st_dep').value, role:$('#st_role').value, phone:$('#st_phone').value, email:$('#st_email').value, salary:parseFloat($('#st_sal').value)||0, qualification:$('#st_qual').value};
+  if(!body.name) return alert('Name required');
+  if(id) await apiPut('/api/staff/'+id, body); else await apiPost('/api/staff', body);
+  closeModal(); renderStaff();
+}
+async function delStaff(id){ if(!confirm('Delete staff?')) return; await apiDel('/api/staff/'+id); renderStaff(); }
+
+// PAYROLL
+async function renderPayroll(){
+  const pays=await apiGet('/api/payrolls');
+  $('#content').innerHTML=`
+  <div class="toolbar"><input id="payMonth" type="month" class="input" style="width:auto" value="${new Date().toISOString().slice(0,7)}"><button class="btn btn-sm" onclick="genPayroll()">Generate Payroll</button><button class="btn btn-sm btn-outline" onclick="renderPayroll()">Refresh</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Month</th><th>Staff</th><th>Basic</th><th>Allowances</th><th>Deductions</th><th>Net</th><th>Status</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${p.month}</td><td>${p.staff_id}</td><td>${fmtMoney(p.basic)}</td><td>${fmtMoney(p.allowances)}</td><td>${fmtMoney(p.deductions)}</td><td><b>${fmtMoney(p.net)}</b></td><td><span class="badge badge-green">${p.status}</span></td></tr>`).join('')}</tbody></table></div>
+  <div class="muted" style="margin-top:8px">Payroll auto-calculates: Allowances 10%, Deductions 5%. Net = Basic + Allowances - Deductions.</div>`;
+}
+async function genPayroll(){ const month=$('#payMonth').value; if(!month) return alert('Select month'); await apiPost('/api/payroll/generate',{month}); renderPayroll(); }
+
+// FEES
+async function renderFees(){
+  const fees=await apiGet('/api/fees-structure');
+  const pays=await apiGet('/api/payments');
+  const students=await apiGet('/api/students');
+  const map={}; students.forEach(s=> map[s.id]=s.first_name+' '+s.last_name+' ('+s.admission_no+')');
+  $('#content').innerHTML=`
+  <div class="tabs"><button class="tab active" onclick="renderFees()">Payments</button><button class="tab" onclick="renderFeesStructure()">Fees Structure</button></div>
+  <div class="toolbar"><button class="btn btn-sm" onclick="openPayModal()"><i class="ri-add-line"></i> Record Payment</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Student</th><th>Amount</th><th>Method</th><th>Term</th><th>Date</th><th></th></tr></thead><tbody>${pays.map(p=>`<tr><td><b>${p.receipt_no||'-'}</b></td><td>${map[p.student_id]||p.student_id}</td><td>${fmtMoney(p.amount)}</td><td>${p.method||''}</td><td>${p.term||''}</td><td>${p.date||''}</td><td><button class="btn btn-sm btn-danger" onclick="delPay(${p.id})">Del</button></td></tr>`).join('')}</tbody></table></div>`;
+  window._studentsForPay=students;
+}
+function renderFeesStructure(){
+  apiGet('/api/fees-structure').then(fees=>{
+    $('#content').innerHTML=`<div class="tabs"><button class="tab" onclick="renderFees()">Payments</button><button class="tab active">Fees Structure</button></div>
+    <div class="toolbar"><button class="btn btn-sm" onclick="openFeesModal()">+ Add Structure</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Class</th><th>Term</th><th>Amount</th><th>Description</th><th>Due Date</th></tr></thead><tbody>${fees.map(f=>`<tr><td>${f.class}</td><td>${f.term}</td><td>${fmtMoney(f.amount)}</td><td>${f.description||''}</td><td>${f.due_date||''}</td></tr>`).join('')}</tbody></table></div>`;
+  });
+}
+function openFeesModal(){ openModal(`<h3>Add Fees Structure</h3><div class="form-grid" style="margin-top:12px"><div><label>Class</label><input id="fs_class" class="input" placeholder="P1"></div><div><label>Term</label><input id="fs_term" class="input" value="Term I"></div><div><label>Amount</label><input id="fs_amt" type="number" class="input"></div><div><label>Due Date</label><input id="fs_due" type="date" class="input"></div><div class="full"><label>Description</label><input id="fs_desc" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveFeesS()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveFeesS(){ await apiPost('/api/fees-structure',{class:$('#fs_class').value, term:$('#fs_term').value, amount:parseFloat($('#fs_amt').value)||0, due_date:$('#fs_due').value, description:$('#fs_desc').value}); closeModal(); renderFeesStructure(); }
+function openPayModal(){
+  const opts=(window._studentsForPay||[]).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class} (${s.admission_no})</option>`).join('');
+  openModal(`<h3>Record Payment</h3><div class="form-grid" style="margin-top:12px"><div class="full"><label>Student*</label><select id="pay_stu" class="input">${opts}</select></div><div><label>Amount*</label><input id="pay_amt" type="number" class="input"></div><div><label>Method</label><select id="pay_met" class="input"><option>Cash</option><option>Bank</option><option>Mobile Money</option></select></div><div><label>Term</label><input id="pay_term" class="input" value="Term I"></div><div><label>Date</label><input id="pay_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="savePay()">Save & Print Receipt</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+}
+async function savePay(){ const body={student_id:parseInt($('#pay_stu').value), amount:parseFloat($('#pay_amt').value), method:$('#pay_met').value, term:$('#pay_term').value, date:$('#pay_date').value, receipt_no:'REC'+Date.now().toString().slice(-7)}; if(!body.amount) return alert('Amount required'); await apiPost('/api/payments',body); closeModal(); renderFees(); }
+async function delPay(id){ if(!confirm('Delete payment?')) return; await apiDel('/api/payments/'+id); renderFees(); }
+
+// EXPENSES & INCOME
+async function renderExpenses(){
+  const ex=await apiGet('/api/expenses'); const inc=await apiGet('/api/incomes');
+  $('#content').innerHTML=`
+  <div class="grid grid2">
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h4>Expenses</h4><button class="btn btn-sm" onclick="openExpModal()">+ Add</button></div><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th></th></tr></thead><tbody>${ex.map(e=>`<tr><td>${e.date||''}</td><td>${e.category}</td><td>${e.description}</td><td>${fmtMoney(e.amount)}</td><td><button class="btn btn-sm btn-danger" onclick="delExp(${e.id})">Del</button></td></tr>`).join('')}</tbody></table></div></div>
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h4>Other Income</h4><button class="btn btn-sm" onclick="openIncModal()">+ Add</button></div><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Source</th><th>Description</th><th>Amount</th></tr></thead><tbody>${inc.map(i=>`<tr><td>${i.date}</td><td>${i.source}</td><td>${i.description}</td><td>${fmtMoney(i.amount)}</td></tr>`).join('')}</tbody></table></div></div>
+  </div>`;
+}
+function openExpModal(){ openModal(`<h3>Add Expense</h3><div class="form-grid" style="margin-top:12px"><div><label>Category</label><input id="ex_cat" class="input" placeholder="Utilities"></div><div><label>Amount</label><input id="ex_amt" type="number" class="input"></div><div class="full"><label>Description</label><input id="ex_desc" class="input"></div><div><label>Date</label><input id="ex_date" type="date" class="input" value="${today()}"></div><div><label>Paid By</label><input id="ex_by" class="input" value="Bursar"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveExp()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveExp(){ await apiPost('/api/expenses',{category:$('#ex_cat').value, amount:parseFloat($('#ex_amt').value), description:$('#ex_desc').value, date:$('#ex_date').value, paid_by:$('#ex_by').value}); closeModal(); renderExpenses(); }
+async function delExp(id){ await apiDel('/api/expenses/'+id); renderExpenses(); }
+function openIncModal(){ openModal(`<h3>Add Income</h3><div class="form-grid" style="margin-top:12px"><div><label>Source</label><input id="in_src" class="input" placeholder="Canteen"></div><div><label>Amount</label><input id="in_amt" type="number" class="input"></div><div class="full"><label>Description</label><input id="in_desc" class="input"></div><div><label>Date</label><input id="in_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveInc()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveInc(){ await apiPost('/api/incomes',{source:$('#in_src').value, amount:parseFloat($('#in_amt').value), description:$('#in_desc').value, date:$('#in_date').value}); closeModal(); renderExpenses(); }
+
+// REPORTS
+async function renderReports(){
+  $('#content').innerHTML=`
+  <div class="card"><h4>Financial Reports</h4>
+    <div class="form-grid" style="margin-top:12px"><div><label>From</label><input id="r_from" type="date" class="input" value="2026-01-01"></div><div><label>To</label><input id="r_to" type="date" class="input" value="${today()}"></div><div style="display:flex;gap:8px;align-items:end"><button class="btn btn-sm" onclick="loadReports()">Generate</button><button class="btn btn-sm btn-outline" onclick="window.print()">Print</button></div></div>
+    <div id="repOut" style="margin-top:16px"></div>
+  </div>`;
+  loadReports();
+}
+async function loadReports(){
+  const from=$('#r_from')?.value, to=$('#r_to')?.value;
+  const inc=from? await apiGet(`/api/reports/income-statement?from=${from}&to=${to}`): await apiGet('/api/reports/income-statement');
+  const bal=await apiGet('/api/reports/balance-sheet');
+  $('#repOut').innerHTML=`
+  <div class="grid grid2">
+    <div class="card" style="border:1px solid var(--border)"><h4>Income Statement (${from||'all'} → ${to||'all'})</h4><table style="margin-top:10px"><tr><td>Total Income (Fees + Other)</td><td style="text-align:right"><b>${fmtMoney(inc.income)}</b></td></tr><tr><td>Total Expenses</td><td style="text-align:right;color:var(--danger)"><b>${fmtMoney(inc.expense)}</b></td></tr><tr style="background:#f8fafc"><td><b>Net Income</b></td><td style="text-align:right;color:${inc.gross>=0?'var(--success)':'var(--danger)'}"><b>${fmtMoney(inc.gross)}</b></td></tr></table></div>
+    <div class="card"><h4>Balance Sheet</h4><table style="margin-top:10px"><tr><td>Cash</td><td style="text-align:right">${fmtMoney(bal.cash)}</td></tr><tr><td>Inventory Assets</td><td style="text-align:right">${fmtMoney(bal.inventory)}</td></tr><tr style="background:#f8fafc"><td><b>Total Assets</b></td><td style="text-align:right"><b>${fmtMoney(bal.assets)}</b></td></tr><tr><td>Liabilities</td><td style="text-align:right">${fmtMoney(bal.liabilities)}</td></tr><tr><td><b>Equity</b></td><td style="text-align:right"><b>${fmtMoney(bal.equity)}</b></td></tr></table></div>
+  </div>`;
+}
+
+// PROCUREMENT
+async function renderProcurement(){
+  const reqs=await apiGet('/api/requisitions'); const sup=await apiGet('/api/suppliers'); const pos=await apiGet('/api/purchase-orders');
+  $('#content').innerHTML=`
+  <div class="tabs"><button class="tab active">Requisitions</button></div>
+  <div class="toolbar"><button class="btn btn-sm" onclick="openReqModal()">+ Requisition</button><button class="btn btn-sm btn-outline" onclick="openSupModal()">+ Supplier</button></div>
+  <div class="grid grid2">
+    <div class="card"><h4>Purchase Requisitions</h4><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Item</th><th>Qty</th><th>Dept</th><th>Status</th><th>Date</th></tr></thead><tbody>${reqs.map(r=>`<tr><td>${r.item}</td><td>${r.quantity}</td><td>${r.department}</td><td><span class="badge ${r.status==='Approved'?'badge-green':r.status==='Pending'?'badge-amber':'badge-red'}">${r.status}</span></td><td>${r.date||''}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="card"><h4>Suppliers</h4><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Name</th><th>Contact</th><th>Category</th></tr></thead><tbody>${sup.map(s=>`<tr><td>${s.name}</td><td>${s.contact||''}</td><td>${s.category||''}</td></tr>`).join('')}</tbody></table></div>
+      <h4 style="margin-top:12px">Purchase Orders</h4><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>PO #</th><th>Supplier</th><th>Total</th><th>Status</th></tr></thead><tbody>${pos.map(p=>`<tr><td>#${p.id}</td><td>${p.supplier_id}</td><td>${fmtMoney(p.total)}</td><td>${p.status}</td></tr>`).join('')}</tbody></table></div>
+    </div>
+  </div>`;
+}
+function openReqModal(){ openModal(`<h3>New Requisition</h3><div class="form-grid" style="margin-top:12px"><div><label>Item</label><input id="rq_item" class="input"></div><div><label>Quantity</label><input id="rq_qty" type="number" class="input"></div><div><label>Department</label><input id="rq_dep" class="input" value="Academics"></div><div><label>Requested By</label><input id="rq_by" class="input" value="Admin"></div><div><label>Date</label><input id="rq_date" type="date" class="input" value="${today()}"></div><div><label>Status</label><select id="rq_st" class="input"><option>Pending</option><option>Approved</option></select></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveReq()">Submit</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveReq(){ await apiPost('/api/requisitions',{item:$('#rq_item').value, quantity:parseInt($('#rq_qty').value), department:$('#rq_dep').value, requested_by:$('#rq_by').value, date:$('#rq_date').value, status:$('#rq_st').value}); closeModal(); renderProcurement(); }
+function openSupModal(){ openModal(`<h3>Add Supplier</h3><div class="form-grid" style="margin-top:12px"><div><label>Name*</label><input id="sp_name" class="input"></div><div><label>Category</label><input id="sp_cat" class="input"></div><div><label>Contact</label><input id="sp_con" class="input"></div><div><label>Email</label><input id="sp_email" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveSup()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveSup(){ await apiPost('/api/suppliers',{name:$('#sp_name').value, category:$('#sp_cat').value, contact:$('#sp_con').value, email:$('#sp_email').value}); closeModal(); renderProcurement(); }
+
+// INVENTORY
+async function renderInventory(){
+  const inv=await apiGet('/api/inventory');
+  $('#content').innerHTML=`
+  <div class="toolbar"><button class="btn btn-sm" onclick="openInvModal()">+ Add Item</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Item</th><th>Category</th><th>Qty</th><th>Unit Price</th><th>Value</th><th>Location</th><th>Stock</th><th></th></tr></thead><tbody>${inv.map(i=>`<tr><td><b>${i.item}</b></td><td>${i.category||''}</td><td>${i.quantity}</td><td>${fmtMoney(i.unit_price)}</td><td>${fmtMoney(i.quantity*i.unit_price)}</td><td>${i.location||''}</td><td>${i.quantity<=i.low_stock?'<span class="badge badge-red">Low</span>':'<span class="badge badge-green">OK</span>'}</td><td><button class="btn btn-sm btn-outline" onclick="editInv(${i.id})">Edit</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function openInvModal(){ openModal(`<h3>Add Inventory Item</h3><div class="form-grid" style="margin-top:12px"><div><label>Item*</label><input id="iv_item" class="input"></div><div><label>Category</label><input id="iv_cat" class="input"></div><div><label>Quantity</label><input id="iv_qty" type="number" class="input"></div><div><label>Unit Price</label><input id="iv_price" type="number" class="input"></div><div><label>Location</label><input id="iv_loc" class="input"></div><div><label>Low Stock Alert</label><input id="iv_low" type="number" class="input" value="10"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveInv()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveInv(){ await apiPost('/api/inventory',{item:$('#iv_item').value, category:$('#iv_cat').value, quantity:parseInt($('#iv_qty').value)||0, unit_price:parseFloat($('#iv_price').value)||0, location:$('#iv_loc').value, low_stock:parseInt($('#iv_low').value)||10, unit:'pcs'}); closeModal(); renderInventory(); }
+async function editInv(id){ const it=await apiGet('/api/inventory/'+id); openModal(`<h3>Edit ${it.item}</h3><div class="form-grid" style="margin-top:12px"><div><label>Quantity</label><input id="iv_qty2" type="number" class="input" value="${it.quantity}"></div><div><label>Unit Price</label><input id="iv_price2" type="number" class="input" value="${it.unit_price}"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="updInv(${id})">Update</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function updInv(id){ await apiPut('/api/inventory/'+id,{quantity:parseInt($('#iv_qty2').value), unit_price:parseFloat($('#iv_price2').value)}); closeModal(); renderInventory(); }
+
+// SICKBAY
+async function renderSickbay(){
+  const visits=await apiGet('/api/medical-records'); const meds=await apiGet('/api/medicines'); const students=await apiGet('/api/students');
+  const map={}; students.forEach(s=> map[s.id]=s.first_name+' '+s.last_name);
+  $('#content').innerHTML=`
+  <div class="grid grid2">
+    <div class="card"><div style="display:flex;justify-content:space-between"><h4>Sickbay Visits</h4><button class="btn btn-sm" onclick="openMedModal()">+ New Visit</button></div><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Date</th><th>Student</th><th>Symptoms</th><th>Treatment</th></tr></thead><tbody>${visits.slice(0,20).map(v=>`<tr><td>${v.visit_date}</td><td>${map[v.student_id]||v.student_id}</td><td>${v.symptoms||''}</td><td>${v.treatment||''}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="card"><div style="display:flex;justify-content:space-between"><h4>Medical Stock</h4><button class="btn btn-sm btn-outline" onclick="openMedicineModal()">+ Medicine</button></div><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Medicine</th><th>Qty</th><th>Expiry</th></tr></thead><tbody>${meds.map(m=>`<tr><td>${m.name}</td><td>${m.quantity} ${m.unit||''}</td><td>${m.expiry||''}</td></tr>`).join('')}</tbody></table></div></div>
+  </div>`;
+}
+function openMedModal(){
+  apiGet('/api/students').then(students=>{
+    const opts=students.slice(0,40).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class}</option>`).join('');
+    openModal(`<h3>New Sickbay Visit</h3><div class="form-grid" style="margin-top:12px"><div class="full"><label>Student*</label><select id="med_stu" class="input">${opts}</select></div><div><label>Date</label><input id="med_date" type="date" class="input" value="${today()}"></div><div><label>Nurse</label><input id="med_nurse" class="input" value="Nurse"></div><div class="full"><label>Symptoms</label><input id="med_sym" class="input"></div><div class="full"><label>Diagnosis / Treatment</label><input id="med_treat" class="input"></div><div class="full"><label>Prescribed</label><input id="med_pres" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveMed()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  });
+}
+async function saveMed(){ await apiPost('/api/medical-records',{student_id:parseInt($('#med_stu').value), visit_date:$('#med_date').value, symptoms:$('#med_sym').value, treatment:$('#med_treat').value, prescribed:$('#med_pres').value, nurse:$('#med_nurse').value}); closeModal(); renderSickbay(); }
+function openMedicineModal(){ openModal(`<h3>Add Medicine</h3><div class="form-grid" style="margin-top:12px"><div><label>Name</label><input id="mm_name" class="input"></div><div><label>Quantity</label><input id="mm_qty" type="number" class="input"></div><div><label>Expiry</label><input id="mm_exp" type="date" class="input"></div><div><label>Supplier</label><input id="mm_sup" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveMedicine()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveMedicine(){ await apiPost('/api/medicines',{name:$('#mm_name').value, quantity:parseInt($('#mm_qty').value), expiry:$('#mm_exp').value, supplier:$('#mm_sup').value}); closeModal(); renderSickbay(); }
+
+// TRANSPORT
+async function renderTransport(){
+  const vehicles=await apiGet('/api/vehicles'); const routes=await apiGet('/api/routes'); const regs=await apiGet('/api/transport-reg'); const students=await apiGet('/api/students');
+  const map={}; students.forEach(s=> map[s.id]=s.first_name+' '+s.last_name+' ('+s.admission_no+')');
+  const rmap={}; routes.forEach(r=> rmap[r.id]=r.name);
+  $('#content').innerHTML=`
+  <div class="grid grid2">
+    <div class="card"><div style="display:flex;justify-content:space-between"><h4>Vehicles & Drivers</h4><button class="btn btn-sm" onclick="openVehicleModal()">+ Vehicle</button></div><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Reg No</th><th>Type</th><th>Capacity</th><th>Driver</th></tr></thead><tbody>${vehicles.map(v=>`<tr><td>${v.reg_no}</td><td>${v.type}</td><td>${v.capacity}</td><td>${v.driver}</td></tr>`).join('')}</tbody></table></div>
+      <h4 style="margin-top:12px">Routes & Trips</h4><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Route</th><th>Stops</th><th>Fee</th></tr></thead><tbody>${routes.map(r=>`<tr><td>${r.name}</td><td>${r.stops||''}</td><td>${fmtMoney(r.fee)}</td></tr>`).join('')}</tbody></table></div><button class="btn btn-sm btn-outline" style="margin-top:8px" onclick="openRouteModal()">+ Route</button>
+    </div>
+    <div class="card"><div style="display:flex;justify-content:space-between"><h4>Transport Registration</h4><button class="btn btn-sm" onclick="openTransRegModal()">+ Register</button></div><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Student</th><th>Route</th><th>Pickup</th></tr></thead><tbody>${regs.map(r=>`<tr><td>${map[r.student_id]||r.student_id}</td><td>${rmap[r.route_id]||r.route_id}</td><td>${r.pickup||''}</td></tr>`).join('')}</tbody></table></div></div>
+  </div>`;
+}
+function openVehicleModal(){ openModal(`<h3>Add Vehicle</h3><div class="form-grid" style="margin-top:12px"><div><label>Reg No*</label><input id="vh_reg" class="input" placeholder="UAX 999Z"></div><div><label>Type</label><input id="vh_type" class="input" value="Bus"></div><div><label>Capacity</label><input id="vh_cap" type="number" class="input" value="60"></div><div><label>Driver</label><input id="vh_drv" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveVehicle()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveVehicle(){ await apiPost('/api/vehicles',{reg_no:$('#vh_reg').value, type:$('#vh_type').value, capacity:parseInt($('#vh_cap').value), driver:$('#vh_drv').value}); closeModal(); renderTransport(); }
+function openRouteModal(){ openModal(`<h3>Add Route</h3><div class="form-grid" style="margin-top:12px"><div><label>Name</label><input id="rt_name" class="input"></div><div><label>Fee (UGX)</label><input id="rt_fee" type="number" class="input"></div><div class="full"><label>Stops (comma separated)</label><input id="rt_stops" class="input" placeholder="Wandegeya, Bwaise, Kawempe"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveRoute()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveRoute(){ await apiPost('/api/routes',{name:$('#rt_name').value, stops:$('#rt_stops').value, fee:parseFloat($('#rt_fee').value)||0}); closeModal(); renderTransport(); }
+function openTransRegModal(){
+  Promise.all([apiGet('/api/students'), apiGet('/api/routes')]).then(([students,routes])=>{
+    const so=students.slice(0,40).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class}</option>`).join('');
+    const ro=routes.map(r=>`<option value="${r.id}">${r.name} — ${fmtMoney(r.fee)}</option>`).join('');
+    openModal(`<h3>Register Student for Transport</h3><div class="form-grid" style="margin-top:12px"><div><label>Student</label><select id="tr_stu" class="input">${so}</select></div><div><label>Route</label><select id="tr_route" class="input">${ro}</select></div><div class="full"><label>Pickup Point</label><input id="tr_pick" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveTransReg()">Register</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  });
+}
+async function saveTransReg(){ await apiPost('/api/transport-reg',{student_id:parseInt($('#tr_stu').value), route_id:parseInt($('#tr_route').value), pickup:$('#tr_pick').value}); closeModal(); renderTransport(); }
+
+// EVENTS
+async function renderEvents(){
+  const ev=await apiGet('/api/events');
+  $('#content').innerHTML=`
+  <div class="toolbar"><button class="btn btn-sm" onclick="openEventModal()">+ Create Event</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Title</th><th>Type</th><th>Start</th><th>End</th><th>Venue</th><th>Audience</th><th></th></tr></thead><tbody>${ev.map(e=>`<tr><td><b>${e.title}</b><div class="muted" style="font-size:11px">${(e.description||'').slice(0,60)}</div></td><td><span class="badge badge-blue">${e.type||''}</span></td><td>${e.start_date||''}</td><td>${e.end_date||''}</td><td>${e.venue||''}</td><td>${e.audience||''}</td><td><button class="btn btn-sm btn-danger" onclick="delEvent(${e.id})">Del</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function openEventModal(){ openModal(`<h3>Create Event</h3><div class="form-grid" style="margin-top:12px"><div class="full"><label>Title*</label><input id="ev_title" class="input"></div><div><label>Type</label><select id="ev_type" class="input"><option>Academic</option><option>Activity</option><option>Meeting</option><option>Sports</option></select></div><div><label>Audience</label><input id="ev_aud" class="input" value="All"></div><div><label>Start Date</label><input id="ev_start" type="date" class="input" value="${today()}"></div><div><label>End Date</label><input id="ev_end" type="date" class="input" value="${today()}"></div><div><label>Venue</label><input id="ev_venue" class="input"></div><div class="full"><label>Description</label><input id="ev_desc" class="input"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveEvent()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
+async function saveEvent(){ await apiPost('/api/events',{title:$('#ev_title').value, type:$('#ev_type').value, audience:$('#ev_aud').value, start_date:$('#ev_start').value, end_date:$('#ev_end').value, venue:$('#ev_venue').value, description:$('#ev_desc').value}); closeModal(); renderEvents(); }
+async function delEvent(id){ await apiDel('/api/events/'+id); renderEvents(); }
+
+// SMS
+async function renderSMS(){
+  const logs=await apiGet('/api/sms-logs');
+  $('#content').innerHTML=`
+  <div class="grid grid2">
+    <div class="card"><h4><i class="ri-message-3-line"></i> Send SMS</h4><p class="muted" style="margin:6px 0">Fee reminders, attendance alerts, announcements. Integrates with Africa's Talking / Twilio in production.</p>
+      <label>Recipient Group</label><select id="sms_group" class="input" onchange="loadSmsRecipients()"><option value="all">All Parents</option><option value="class">By Class</option><option value="debtors">Fee Debtors</option><option value="custom">Custom Numbers</option></select>
+      <div id="smsExtra" style="margin-top:8px"></div>
+      <label style="margin-top:8px">Message</label><textarea id="sms_msg" class="input" rows="3" placeholder="Dear Parent, ..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-sm" onclick="sendSMS()">Send SMS</button><button class="btn btn-sm btn-outline" onclick="fillTemplate('fees')">Fee Reminder Template</button></div>
+      <div id="smsRes" style="margin-top:10px"></div>
+    </div>
+    <div class="card"><h4>SMS Logs</h4><div class="table-wrap" style="margin-top:8px"><table><thead><tr><th>Date</th><th>To</th><th>Type</th><th>Message</th></tr></thead><tbody>${logs.slice(0,20).map(l=>`<tr><td>${(l.date||'').slice(0,16)}</td><td>${l.recipient} (${l.phone})</td><td>${l.type||''}</td><td>${(l.message||'').slice(0,60)}</td></tr>`).join('')}</tbody></table></div></div>
+  </div>`;
+}
+function fillTemplate(t){ if(t==='fees') $('#sms_msg').value='Dear Parent, this is a reminder that school fees for Term I is due. Balance: UGX 150,000. Please pay via bank/MoMo. Thank you — EduControl Academy.'; }
+async function loadSmsRecipients(){
+  const g=$('#sms_group').value;
+  if(g==='class'){ const classes=await apiGet('/api/classes'); $('#smsExtra').innerHTML=`<label>Class</label><select id="sms_class" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select>`; }
+  else if(g==='custom') $('#smsExtra').innerHTML=`<label>Phone numbers (comma separated)</label><input id="sms_phones" class="input" placeholder="0772..., 0755...">`;
+  else $('#smsExtra').innerHTML='';
+}
+async function sendSMS(){
+  const msg=$('#sms_msg').value.trim(); if(!msg) return alert('Enter message');
+  let recipients=[];
+  const g=$('#sms_group').value;
+  if(g==='custom'){ const nums=$('#sms_phones').value.split(',').map(s=>s.trim()).filter(Boolean); recipients=nums.map(p=> ({phone:p, name:p})); }
+  else if(g==='class'){ const cls=$('#sms_class').value; const studs=await apiGet('/api/students?q='+encodeURIComponent(cls)); recipients=studs.filter(s=> s.class===cls).map(s=> ({phone:s.parent_phone, name:s.parent_name||s.first_name})); }
+  else { const studs=await apiGet('/api/students'); recipients=studs.slice(0,30).map(s=> ({phone:s.parent_phone, name:s.parent_name||s.first_name})).filter(r=> r.phone); }
+  if(recipients.length===0) return alert('No recipients with phone numbers');
+  const r=await apiPost('/api/sms/send',{recipients, message:msg, type:g});
+  $('#smsRes').innerHTML=`<div class="alert alert-info">Queued ${r.sent} SMS — ${r.note}</div>`; setTimeout(renderSMS,1200);
+}
+
+// BACKUP
+function renderBackup(){
+  $('#content').innerHTML=`
+  <div class="grid grid2">
+    <div class="card"><h4><i class="ri-shield-keyhole-line"></i> Backup & Data Security</h4><p class="muted" style="margin:8px 0">Database is SQLite file at <code>data/school.db</code>. On Render, add a Disk for persistence.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-sm" onclick="backupDB()"><i class="ri-download-line"></i> Download Backup (.db)</button><button class="btn btn-sm btn-outline" onclick="alert('To restore: upload your .db to data/school.db on server and restart. For Render, use SFTP or redeploy with file.')">Restore Data</button></div>
+      <div class="alert alert-info" style="margin-top:12px"><b>Role-Based Access:</b> admin (full), bursar (finance), teacher (academic), nurse (sickbay). Create users in Dashboard → Users. JWT auth protects all APIs.</div>
+      <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>bursar</option><option>teacher</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
+    </div>
+    <div class="card"><h4>Secure User Accounts</h4><div id="userList" class="muted">Loading...</div>
+      <h4 style="margin-top:14px">Protect Important Records</h4><ul style="margin:8px 0 0 18px;font-size:13px;color:var(--muted)"><li>Daily auto-backup recommended (cron on Render)</li><li>Enable Render Disk for <code>/data</code> persistence</li><li>JWT 7-day expiry • bcrypt passwords</li><li>All deletes require confirmation</li></ul>
+    </div>
+  </div>`;
+  apiGet('/api/users').then(users=>{ $('#userList').innerHTML=`<div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Email</th></tr></thead><tbody>${users.map(u=>`<tr><td><b>${u.username}</b><div class="muted" style="font-size:11px">${u.name||''}</div></td><td><span class="badge badge-blue">${u.role}</span></td><td>${u.email||''}</td></tr>`).join('')}</tbody></table></div>`; });
+}
+async function createUser(){
+  const body={username:$('#u_user').value, password:$('#u_pass').value, role:$('#u_role').value, name:$('#u_name').value};
+  if(!body.username||!body.password) return alert('Username & password required');
+  try{ await apiPost('/api/register', body); $('#uMsg').innerHTML='<span style="color:var(--success)">User created</span>'; renderBackup(); }catch(e){ $('#uMsg').textContent=e.message; }
+}
+function backupDB(){ window.location.href='/api/backup'; }
+
+// init
+if(token && user) showApp(); else { $('#loginView').style.display='flex'; }
+$('#password').addEventListener('keydown', e=> { if(e.key==='Enter') login(); });
+renderNav();
+</script>
+</body>
+</html>
