@@ -250,11 +250,21 @@ function autoSeed(){
 }
 autoSeed();
 
-// Backup
-app.get('/api/backup', verify, (req,res)=>{
+// Backup - handles WAL mode correctly
+app.get('/api/backup', verify, async (req,res)=>{
   const src = path.join(__dirname,'../data/school.db');
   if(!fs.existsSync(src)) return res.status(404).json({error:'No DB file'});
-  res.download(src, `backup_${dayjs().format('YYYY-MM-DD')}.db`);
+  const tmp = path.join(__dirname,'../data/backup_tmp.db');
+  try{
+    // Use VACUUM INTO for consistent backup (includes WAL)
+    db.exec(`VACUUM INTO '${tmp.replace(/'/g,"''")}'`);
+    res.download(tmp, `backup_${dayjs().format('YYYY-MM-DD')}.db`, (err)=>{
+      try{ fs.unlinkSync(tmp); }catch(e){}
+    });
+  }catch(e){
+    // fallback to direct file
+    res.download(src, `backup_${dayjs().format('YYYY-MM-DD')}.db`);
+  }
 });
 app.post('/api/restore', verify, (req,res)=>{
   res.json({note:'Restore via uploading DB file to /data/school.db and restart server'});
