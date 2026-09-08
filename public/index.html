@@ -1108,11 +1108,12 @@ async function renderExams(){
   if(myAssign.length){
     mySubjectsHTML=`<div class="card" style="margin-bottom:12px;"><h4><i class="ri-book-open-line"></i> My Subjects — where you enter marks</h4><p class="muted" style="font-size:11px;">You are assigned to ${myAssign.length} subject/class — click Enter to go directly to marks entry filtered to that subject.</p><div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; margin-top:8px;">${myAssign.map(a=>`<div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px; background:#fff;"><div style="font-weight:700;"><i class="ri-bookmark-line"></i> ${a.subject}</div><div class="muted" style="font-size:11px;">Class <b>${a.class}</b> • ${a.class_teacher? 'Class: '+a.class_teacher : ''}</div><button class="btn btn-sm" style="margin-top:8px; background:#7c3aed; color:#fff;" onclick="openResultModalForAssignment(${exams[0]?.id||'null'}, '${a.subject}', '${a.class}')"><i class="ri-quill-pen-line"></i> Enter Marks</button></div>`).join('')}</div></div>`;
   }
+  const canCompileAll = canAccess('exams:compile') || isClassTeacher;
   $('#content').innerHTML=`
   ${roleBanner}
   ${mySubjectsHTML}
   <div class="toolbar"><button class="btn btn-sm" onclick="openExamModal()">+ Create Exam</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Exam</th><th>Term</th><th>Year</th><th>Class</th><th>Date</th><th></th></tr></thead><tbody>${exams.map(e=>`<tr><td><b>${e.name}</b></td><td>${e.term||''}</td><td>${e.year||''}</td><td>${e.class||''}</td><td>${e.date||''}</td><td><button class="btn btn-sm btn-outline" onclick="openResultModal(${e.id},'${e.name.replace(/'/g,'')}')">Enter Results</button> <button class="btn btn-sm btn-outline" onclick="viewResults(${e.id})">View</button> <button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="compileResults(${e.id})"><i class="ri-checkbox-circle-line"></i> Compile</button> <button class="btn btn-sm btn-danger" onclick="delExam(${e.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
+  <div class="table-wrap"><table><thead><tr><th>Exam</th><th>Term</th><th>Year</th><th>Class</th><th>Date</th><th></th></tr></thead><tbody>${exams.map(e=>`<tr><td><b>${e.name}</b></td><td>${e.term||''}</td><td>${e.year||''}</td><td>${e.class||''}</td><td>${e.date||''}</td><td><button class="btn btn-sm btn-outline" onclick="openResultModal(${e.id},'${e.name.replace(/'/g,'')}')">Enter Results</button> <button class="btn btn-sm btn-outline" onclick="viewResults(${e.id})">View</button> ${canCompileAll?`<button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="compileResults(${e.id})"><i class="ri-checkbox-circle-line"></i> Compile</button>`: `<span class="muted" style="font-size:10px; margin-left:4px;">Subject teacher cannot compile</span>`} <button class="btn btn-sm btn-danger" onclick="delExam(${e.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
   <div id="resView" style="margin-top:16px"></div>`;
 }
 function openResultModalForAssignment(examId, subject, cls){
@@ -1139,23 +1140,46 @@ async function openResultModal(examId, examName){
   const examClass=exam ? exam.class : '';
   const allStudents=await apiGet('/api/students');
   const classes=await apiGet('/api/classes').catch(()=>[]);
-  // Per class: filter to exam's class if exists, else show all
-  const bulkStudents = examClass ? allStudents.filter(s=> s.class===examClass) : allStudents;
+  let myAssign=[]; try{ myAssign=await apiGet('/api/my-assignments'); }catch(e){}
+  const isSubjectOnly = user.role==='subject_teacher' && myAssign.length;
+  let assignSubjects=[], assignClasses=[];
+  if(isSubjectOnly){
+    assignSubjects=[...new Set(myAssign.map(a=>a.subject))];
+    assignClasses=[...new Set(myAssign.map(a=>a.class))];
+  }
+  // If subject teacher, restrict students to assigned classes only; else filter to exam class if exists
+  let bulkStudents;
+  if(isSubjectOnly){
+    bulkStudents = allStudents.filter(s=> assignClasses.includes(s.class));
+    if(examClass && !assignClasses.includes(examClass)) bulkStudents=[]; // exam class not in your assignment
+  } else {
+    bulkStudents = examClass ? allStudents.filter(s=> s.class===examClass) : allStudents;
+  }
   const displayBulk = bulkStudents.slice(0,50);
-  const classInfo = examClass ? `Class <b>${examClass}</b> — ${bulkStudents.length} pupils` : `All Classes — ${bulkStudents.length} pupils (exam has no class)`;
-  openModal(`<h3>Enter Results — ${examName} <span class="badge badge-blue" style="margin-left:6px;">${examClass||'All'}</span></h3>
+  let classInfo;
+  if(isSubjectOnly){
+    classInfo = assignClasses.length ? `Your assigned class${assignClasses.length>1?'es':''} <b>${assignClasses.join(', ')}</b> — ${bulkStudents.length} pupils • Your subject${assignSubjects.length>1?'s':''} <b>${assignSubjects.join(', ')}</b>` : `No assigned class`;
+    if(examClass) classInfo+=` • Exam class <b>${examClass}</b> ${assignClasses.includes(examClass)? '<span class="badge badge-green">✓ yours</span>':'<span class="badge badge-red">not yours — cannot enter</span>'}`;
+  } else {
+    classInfo = examClass ? `Class <b>${examClass}</b> — ${bulkStudents.length} pupils` : `All Classes — ${bulkStudents.length} pupils (exam has no class)`;
+  }
+  const subjectOptions = isSubjectOnly ? assignSubjects.map(s=>`<option>${s}</option>`).join('') : subjects.map(s=>`<option>${s.name}</option>`).join('');
+  const subjectNotice = isSubjectOnly ? `<div class="alert" style="background:#f3e8ff; border:1px solid #d8b4fe; color:#6b21a8; font-size:11px; margin-top:6px;"><b><i class="ri-lock-2-line"></i> Subject Teacher lock:</b> You enter marks <b>only for your assigned subject & class</b>. Go to <b>My Subjects below → Enter Marks</b>. You cannot compile. The class teacher will compile once you have entered. ${assignClasses.length? 'Your class: <b>'+assignClasses.join(', ')+'</b>': ''}</div>` : '';
+  openModal(`<h3>Enter Results — ${examName} <span class="badge badge-blue" style="margin-left:6px;">${examClass||'All'}</span> ${isSubjectOnly?'<span class="badge badge-purple" style="margin-left:4px;">Subject Teacher — restricted</span>':''}</h3>
     <div class="tabs" style="margin-top:10px;">
       <button class="tab active" id="tabBulk" onclick="switchMarkMode('bulk',${examId})"><i class="ri-team-line"></i> Bulk by Class</button>
       <button class="tab" id="tabSingle" onclick="switchMarkMode('single',${examId})"><i class="ri-user-3-line"></i> Per Student</button>
     </div>
     <div id="bulkMode">
-      <div class="alert alert-info" style="margin-top:8px; font-size:11px;"><b>Bulk Mode — Per Class:</b> ${classInfo} • Select subject, enter marks 0-100 for all pupils in class. Grade auto.</div>
-      <div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select>
-      <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0;"><span class="muted" style="font-size:11px;">${displayBulk.length} students shown • Scroll to see all</span><span class="badge badge-amber">${examClass?examClass:'All'}</span></div>
-      <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Marks (0-100)</th><th>Grade</th></tr></thead><tbody>${displayBulk.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}" data-adm="${s.admission_no}" style="padding:6px;width:85px; font-size:12px;" placeholder="—" oninput="this.nextElementSibling.textContent=scoreGrade(this.value||0).g"></td><td><span class="badge badge-green" style="min-width:28px; display:inline-block; text-align:center;">-</span></td></tr>`).join('')}</tbody></table></div>
-      <div class="muted" style="font-size:10px; margin-top:6px;">Tip: Leave blank to skip. Only filled will be saved.</div>
+      <div class="alert alert-info" style="margin-top:8px; font-size:11px;"><b>Bulk Mode — Per Class:</b> ${classInfo} • Enter marks 0-100 for all pupils in class. Grade auto.</div>
+      ${subjectNotice}
+      <div style="margin-top:10px"><label>Subject ${isSubjectOnly?'<span class="badge badge-purple" style="margin-left:4px;">your subject only</span>':''}</label><select id="r_sub" class="input" ${isSubjectOnly?'disabled':''}>${subjectOptions||'<option>No assigned subject</option>'}</select>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0;"><span class="muted" style="font-size:11px;">${displayBulk.length} students shown ${isSubjectOnly?'— your class only':''} • Scroll to see all</span><span class="badge badge-amber">${examClass?examClass:(isSubjectOnly? assignClasses.join(', '):'All')}</span></div>
+      ${!displayBulk.length&&isSubjectOnly?`<div class="alert" style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b; font-size:11px;">No pupils in your assigned class for this exam. ${examClass&&!assignClasses.includes(examClass)?'Exam class <b>'+examClass+'</b> is not your assigned class <b>'+assignClasses.join(', ')+'</b>. Use an exam for your class, or ask admin to assign you.':''}</div>`:''}
+      <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Marks (0-100)</th><th>Grade</th></tr></thead><tbody>${displayBulk.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}" data-adm="${s.admission_no}" style="padding:6px;width:85px; font-size:12px;" placeholder="—" ${!displayBulk.length?'disabled':''} oninput="this.nextElementSibling.textContent=scoreGrade(this.value||0).g"></td><td><span class="badge badge-green" style="min-width:28px; display:inline-block; text-align:center;">-</span></td></tr>`).join('')}</tbody></table></div>
+      <div class="muted" style="font-size:10px; margin-top:6px;">${isSubjectOnly?'You can only save for your assigned subject/class — class teacher compiles later.': 'Tip: Leave blank to skip. Only filled will be saved.'}</div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:12px; flex-wrap:wrap;"><button class="btn btn-sm" onclick="previewResultsEntry(${examId})"><i class="ri-eye-line"></i> Preview</button><button class="btn btn-sm" style="background:#1e40af;" onclick="saveResults(${examId})"><i class="ri-save-line"></i> Save Bulk</button></div>
+      <div style="display:flex;gap:8px;margin-top:12px; flex-wrap:wrap;"><button class="btn btn-sm" onclick="previewResultsEntry(${examId})"><i class="ri-eye-line"></i> Preview</button><button class="btn btn-sm" style="background:#1e40af;" onclick="saveResults(${examId})" ${!displayBulk.length&&isSubjectOnly?'disabled':''}><i class="ri-save-line"></i> Save Bulk</button></div>
     </div>
     <div id="singleMode" style="display:none;">
       <div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; padding:10px; margin-top:8px; font-size:11px;"><b>Per Student Mode:</b> Select Class → Student → enter marks for <b>all subjects</b> for that one pupil.</div>
