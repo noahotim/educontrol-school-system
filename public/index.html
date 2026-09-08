@@ -258,45 +258,108 @@ async function apiDel(url){ const r=await fetch(url,{method:'DELETE', headers:au
 function openModal(html){ $('#modalCard').innerHTML=html; $('#modal').classList.add('open'); }
 function closeModal(){ $('#modal').classList.remove('open'); }
 
-// DASHBOARD
+// DASHBOARD — Role-Specific
 async function renderDashboard(){
   const d=await apiGet('/api/dashboard');
-  $('#content').innerHTML=`
-  <div class="grid grid4">
-    <div class="card stat"><div><div class="muted">Total Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">Active</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
-    <div class="card stat"><div><div class="muted">Staff</div><div class="kpi">${fmt(d.staff)}</div><div class="muted">Payroll ready</div></div><div class="stat-icon" style="background:#dcfce7;color:#166534"><i class="ri-user-star-line"></i></div></div>
-    <div class="card stat"><div><div class="muted">Fees Collected</div><div class="kpi">${fmtMoney(d.fees)}</div><div class="muted">Term I</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-wallet-3-line"></i></div></div>
-    <div class="card stat"><div><div class="muted">Expenses</div><div class="kpi">${fmtMoney(d.expenses)}</div><div class="muted">Balance ${fmtMoney(d.fees-d.expenses)}</div></div><div class="stat-icon" style="background:#fee2e2;color:#991b1b"><i class="ri-exchange-dollar-line"></i></div></div>
-  </div>
-  <div class="grid grid4" style="margin-top:16px">
-    <div class="card"><div class="muted">Present Today</div><div class="kpi" style="color:var(--success)">${fmt(d.attendanceToday)}</div></div>
-    <div class="card"><div class="muted">Low Stock Items</div><div class="kpi" style="color:var(--danger)">${fmt(d.lowStock)}</div></div>
-    <div class="card"><div class="muted">Sickbay Visits Today</div><div class="kpi">${fmt(d.sickVisits)}</div></div>
-    <div class="card"><div class="muted">Transport / Events</div><div class="kpi">${fmt(d.transport)} / ${fmt(d.events)}</div></div>
-  </div>
-  <div class="grid grid2" style="margin-top:16px">
-    <div class="card"><h4>Fees Trend (last 6 months)</h4><canvas id="c1" height="140"></canvas></div>
-    <div class="card"><h4>Students by Class</h4><canvas id="c2" height="140"></canvas></div>
-  </div>
-  <div class="grid grid2" style="margin-top:16px">
-    <div class="card"><h4>Expenses by Category</h4><canvas id="c3" height="140"></canvas></div>
-    <div class="card"><h4>Attendance (last 7 days)</h4><canvas id="c4" height="140"></canvas></div>
-  </div>
-  <div class="card" style="margin-top:16px">
-    <h4>Quick Actions</h4>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <button class="btn btn-sm" onclick="navigate('students')">+ Admit Student</button>
-      <button class="btn btn-sm btn-outline" onclick="navigate('attendance')">Mark Attendance</button>
-      <button class="btn btn-sm btn-outline" onclick="navigate('fees')">Record Payment</button>
-      <button class="btn btn-sm btn-outline" onclick="navigate('exams')">Enter Results</button>
-      <button class="btn btn-sm btn-outline" onclick="navigate('sms')">Send SMS</button>
+  const role = user.role;
+  const isAdmin = role==='admin', isHead = role==='headteacher', isTeacher = role==='teacher', isBursar = role==='bursar', isNurse = role==='nurse';
+  const titleMap = {admin:'Admin Control Centre', headteacher:'Head Teacher Dashboard', teacher:'Teacher Dashboard', bursar:'Bursar — Finance Centre', nurse:'Sickbay Dashboard'};
+  $('#pageTitle').textContent = titleMap[role] || 'Dashboard';
+  let html = `<div class="alert" style="background:${isTeacher?'#eff6ff':isBursar?'#fefce8':isNurse?'#fdf2f8':'#f0fdf4'}; border:1px solid ${isTeacher?'#bfdbfe':isBursar?'#fde68a':isNurse?'#fbcfe8':'#bbf7d0'}; display:flex; justify-content:space-between; align-items:center;"><div><b>${titleMap[role]}</b> <span class="muted">— ${user.name}</span> <span class="badge badge-blue" style="margin-left:6px;">${role}</span></div><span class="muted" style="font-size:11px;">${isAdmin?'Full access to all modules':isHead?'Academic + finance overview':isTeacher?'Academic • Attendance • Exams • Report Cards':isBursar?'Finance • Payroll • Fees • Reports':isNurse?'Medical • Sickbay • Students view'}</span></div>`;
+
+  if(isBursar){
+    html += `
+    <div class="grid grid4" style="margin-top:14px;">
+      <div class="card stat"><div><div class="muted">Fees Collected</div><div class="kpi">${fmtMoney(d.fees)}</div><div class="muted">Term I</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-wallet-3-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Expenses</div><div class="kpi" style="color:var(--danger)">${fmtMoney(d.expenses)}</div><div class="muted">Cash ${fmtMoney(d.fees-d.expenses)}</div></div><div class="stat-icon" style="background:#fee2e2;color:#991b1b"><i class="ri-exchange-dollar-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Net Balance</div><div class="kpi" style="color:${d.fees-d.expenses>=0?'var(--success)':'var(--danger)'}">${fmtMoney(d.fees-d.expenses)}</div><div class="muted">Income–Expenses</div></div><div class="stat-icon" style="background:#dcfce7;color:#166534"><i class="ri-scales-3-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Pending Payroll</div><div class="kpi">${fmt(d.staff)}</div><div class="muted">Staff • Generate monthly</div></div><div class="stat-icon" style="background:#e0f2fe;color:#0369a1"><i class="ri-money-dollar-circle-line"></i></div></div>
     </div>
-  </div>`;
+    <div class="grid grid2" style="margin-top:16px;">
+      <div class="card"><h4>Fees Trend (6 months)</h4><canvas id="c1" height="140"></canvas></div>
+      <div class="card"><h4>Expenses by Category</h4><canvas id="c3" height="140"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:16px;"><h4>Bursar Quick Actions</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+      <button class="btn btn-sm" onclick="navigate('fees')"><i class="ri-wallet-3-line"></i> Record Payment</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('expenses')">Add Expense</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('payroll')">Generate Payroll</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('reports')">Financial Reports</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('sms')">Fee SMS</button>
+    </div></div>`;
+  } else if(isTeacher){
+    html += `
+    <div class="grid grid4" style="margin-top:14px;">
+      <div class="card stat"><div><div class="muted">My Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">All classes</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Present Today</div><div class="kpi" style="color:var(--success)">${fmt(d.attendanceToday)}</div><div class="muted">Attendance</div></div><div class="stat-icon" style="background:#dcfce7;color:#166534"><i class="ri-calendar-check-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Exams</div><div class="kpi">${fmt(d.feesByMonth.length)}</div><div class="muted">Results ready</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-file-list-3-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">AI Tutor</div><div class="kpi"><i class="ri-robot-line"></i></div><div class="muted">Personalized</div></div><div class="stat-icon" style="background:#f3e8ff;color:#7c3aed"><i class="ri-lightbulb-line"></i></div></div>
+    </div>
+    <div class="grid grid2" style="margin-top:16px;">
+      <div class="card"><h4>Students by Class</h4><canvas id="c2" height="140"></canvas></div>
+      <div class="card"><h4>Attendance — Last 7 Days</h4><canvas id="c4" height="140"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:16px;"><h4>Teacher Quick Actions</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+      <button class="btn btn-sm" onclick="navigate('attendance')"><i class="ri-calendar-check-line"></i> Mark Attendance</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('exams')">Enter Results</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('reportcards')">Report Cards (A4 PDF)</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('aitutor')">AI Tutor</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('classes')">My Classes</button>
+    </div><div class="alert alert-info" style="margin-top:10px;">You have <b>Academic access only</b> — Finance, Payroll, Sickbay edit and Backup are restricted (403).</div></div>`;
+  } else if(isNurse){
+    html += `
+    <div class="grid grid4" style="margin-top:14px;">
+      <div class="card stat"><div><div class="muted">Total Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">Under care</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Visits Today</div><div class="kpi" style="color:var(--danger)">${fmt(d.sickVisits)}</div><div class="muted">Sickbay</div></div><div class="stat-icon" style="background:#fee2e2;color:#991b1b"><i class="ri-heart-pulse-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Low Stock Medicines</div><div class="kpi" style="color:var(--danger)">${fmt(d.lowStock)}</div><div class="muted">Reorder</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-medicine-bottle-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Transport</div><div class="kpi">${fmt(d.transport)}</div><div class="muted">Students on transport</div></div><div class="stat-icon" style="background:#e0f2fe;color:#0369a1"><i class="ri-bus-line"></i></div></div>
+    </div>
+    <div class="card" style="margin-top:16px;"><h4>Nurse Quick Actions</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+      <button class="btn btn-sm" onclick="navigate('sickbay')"><i class="ri-heart-pulse-line"></i> New Sickbay Visit</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('students')">View Students</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('sickbay')">Medical Stock</button>
+    </div><div class="alert alert-info" style="margin-top:10px;">You have <b>Medical access only</b> — Finance, Exams, Payroll and Backup are restricted (403).</div></div>`;
+  } else {
+    // Admin + Headteacher — full
+    html += `
+    <div class="grid grid4">
+      <div class="card stat"><div><div class="muted">Total Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">Active</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Staff</div><div class="kpi">${fmt(d.staff)}</div><div class="muted">Payroll ready</div></div><div class="stat-icon" style="background:#dcfce7;color:#166534"><i class="ri-user-star-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Fees Collected</div><div class="kpi">${fmtMoney(d.fees)}</div><div class="muted">Term I</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-wallet-3-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Expenses</div><div class="kpi">${fmtMoney(d.expenses)}</div><div class="muted">Balance ${fmtMoney(d.fees-d.expenses)}</div></div><div class="stat-icon" style="background:#fee2e2;color:#991b1b"><i class="ri-exchange-dollar-line"></i></div></div>
+    </div>
+    <div class="grid grid4" style="margin-top:16px">
+      <div class="card"><div class="muted">Present Today</div><div class="kpi" style="color:var(--success)">${fmt(d.attendanceToday)}</div></div>
+      <div class="card"><div class="muted">Low Stock Items</div><div class="kpi" style="color:var(--danger)">${fmt(d.lowStock)}</div></div>
+      <div class="card"><div class="muted">Sickbay Visits Today</div><div class="kpi">${fmt(d.sickVisits)}</div></div>
+      <div class="card"><div class="muted">Transport / Events</div><div class="kpi">${fmt(d.transport)} / ${fmt(d.events)}</div></div>
+    </div>
+    <div class="grid grid2" style="margin-top:16px">
+      <div class="card"><h4>Fees Trend (last 6 months)</h4><canvas id="c1" height="140"></canvas></div>
+      <div class="card"><h4>Students by Class</h4><canvas id="c2" height="140"></canvas></div>
+    </div>
+    <div class="grid grid2" style="margin-top:16px">
+      <div class="card"><h4>Expenses by Category</h4><canvas id="c3" height="140"></canvas></div>
+      <div class="card"><h4>Attendance (last 7 days)</h4><canvas id="c4" height="140"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h4>Quick Actions — All Modules</h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn btn-sm" onclick="navigate('students')">+ Admit Student</button>
+        <button class="btn btn-sm btn-outline" onclick="navigate('attendance')">Mark Attendance</button>
+        <button class="btn btn-sm btn-outline" onclick="navigate('fees')">Record Payment</button>
+        <button class="btn btn-sm btn-outline" onclick="navigate('exams')">Enter Results</button>
+        <button class="btn btn-sm btn-outline" onclick="navigate('reportcards')">Report Cards A4 PDF</button>
+        <button class="btn btn-sm btn-outline" onclick="navigate('sms')">Send SMS</button>
+      </div>
+    </div>`;
+  }
+  $('#content').innerHTML = html;
+  // Charts — only init those present
   setTimeout(()=>{
-    new Chart($('#c1'),{type:'bar',data:{labels:d.feesByMonth.map(x=>x.m), datasets:[{label:'UGX', data:d.feesByMonth.map(x=>x.total), backgroundColor:'#3b82f6'}]}, options:{plugins:{legend:{display:false}}}});
-    new Chart($('#c2'),{type:'doughnut',data:{labels:d.studentsByClass.map(x=>x.class), datasets:[{data:d.studentsByClass.map(x=>x.count), backgroundColor:['#1e40af','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6']}]}, options:{plugins:{legend:{position:'bottom'}}}});
-    new Chart($('#c3'),{type:'pie',data:{labels:d.expensesByCat.map(x=>x.category||'General'), datasets:[{data:d.expensesByCat.map(x=>x.total), backgroundColor:['#f59e0b','#ef4444','#10b981','#3b82f6']}]}, options:{plugins:{legend:{position:'bottom'}}}});
-    new Chart($('#c4'),{type:'line',data:{labels:d.attendanceTrend.map(x=>x.date), datasets:[{label:'Present', data:d.attendanceTrend.map(x=>x.present), borderColor:'#10b981', tension:.4, fill:true, backgroundColor:'rgba(16,185,129,.15)'}]}, options:{plugins:{legend:{display:false}}}});
+    if(document.getElementById('c1')) new Chart($('#c1'),{type:'bar',data:{labels:d.feesByMonth.map(x=>x.m), datasets:[{label:'UGX', data:d.feesByMonth.map(x=>x.total), backgroundColor:'#3b82f6'}]}, options:{plugins:{legend:{display:false}}}});
+    if(document.getElementById('c2')) new Chart($('#c2'),{type:'doughnut',data:{labels:d.studentsByClass.map(x=>x.class), datasets:[{data:d.studentsByClass.map(x=>x.count), backgroundColor:['#1e40af','#3b82f6','#06b6d4','#10b981','#f59e0b','#ef4444','#8b5cf6']}]}, options:{plugins:{legend:{position:'bottom'}}}});
+    if(document.getElementById('c3')) new Chart($('#c3'),{type:'pie',data:{labels:d.expensesByCat.map(x=>x.category||'General'), datasets:[{data:d.expensesByCat.map(x=>x.total), backgroundColor:['#f59e0b','#ef4444','#10b981','#3b82f6']}]}, options:{plugins:{legend:{position:'bottom'}}}});
+    if(document.getElementById('c4')) new Chart($('#c4'),{type:'line',data:{labels:d.attendanceTrend.map(x=>x.date), datasets:[{label:'Present', data:d.attendanceTrend.map(x=>x.present), borderColor:'#10b981', tension:.4, fill:true, backgroundColor:'rgba(16,185,129,.15)'}]}, options:{plugins:{legend:{display:false}}}});
   },100);
 }
 
