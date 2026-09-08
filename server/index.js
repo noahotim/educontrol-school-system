@@ -44,8 +44,9 @@ function maintenanceGuard(req,res,next){
     }
     if(m && m.enabled){
       const isMaintenanceGet = req.path==='/api/maintenance';
+      const isMaintenanceStatus = req.path==='/api/maintenance/status';
       const isBackupKey = req.path==='/api/backup' && req.query.key;
-      if(isMaintenanceGet || isBackupKey) return next();
+      if(isMaintenanceGet || isMaintenanceStatus || isBackupKey) return next();
       // HARD: check login — only admin login allowed
       if(req.path==='/api/login'){
         const {username}=req.body||{};
