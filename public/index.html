@@ -1296,7 +1296,14 @@ async function downloadStaffCardsPDF(){
 function openStaffModal(id){
   const load=id? apiGet('/api/staff/'+id) : Promise.resolve({});
   load.then(s=>{
-    openModal(`<h3>${id?'Edit':'Add'} Staff</h3><div class="form-grid" style="margin-top:12px">
+    const photo = s.photo ? `<img src="${s.photo}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;">` : `<div style="width:80px;height:80px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;"><i class="ri-user-3-line" style="font-size:28px;"></i></div>`;
+    const canPhoto = user.role==='admin' || user.role==='headteacher';
+    openModal(`<h3>${id?'Edit':'Add'} Staff</h3>
+    <div style="display:flex; gap:16px; align-items:center; margin:12px 0; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
+      ${photo}
+      <div style="flex:1;"><div style="font-weight:700;">${s.name||'New Staff'}</div><div class="muted" style="font-size:11px;">${s.staff_no||'Auto Staff No'}</div>${canPhoto?`<label class="btn btn-sm btn-outline" style="margin-top:6px; display:inline-block; cursor:pointer;"><i class="ri-camera-line"></i> ${s.photo?'Change':'Upload'} Photo<input type="file" id="st_photo" accept="image/*" style="display:none;" onchange="previewPhoto(this,'stPhotoPreview')"></label> <span class="muted" style="font-size:10px;">Admin only • JPG/PNG ≤2MB</span>`: `<span class="muted" style="font-size:11px;">Photo by admin only</span>`}<div id="stPhotoPreview" style="margin-top:6px;"></div></div>
+    </div>
+    <div class="form-grid" style="margin-top:12px">
       <div><label>Staff No</label><input id="st_no" class="input" value="${s.staff_no||''}" placeholder="STF006"></div><div><label>Name*</label><input id="st_name" class="input" value="${s.name||''}"></div>
       <div><label>Department</label><input id="st_dep" class="input" value="${s.department||''}"></div><div><label>Role</label><input id="st_role" class="input" value="${s.role||''}"></div>
       <div><label>Phone</label><input id="st_phone" class="input" value="${s.phone||''}"></div><div><label>Email</label><input id="st_email" class="input" value="${s.email||''}"></div>
@@ -1307,8 +1314,15 @@ function openStaffModal(id){
 async function saveStaff(id){
   const body={staff_no:$('#st_no').value||'STF'+Date.now().toString().slice(-4), name:$('#st_name').value, department:$('#st_dep').value, role:$('#st_role').value, phone:$('#st_phone').value, email:$('#st_email').value, salary:parseFloat($('#st_sal').value)||0, qualification:$('#st_qual').value};
   if(!body.name) return alert('Name required');
-  if(id) await apiPut('/api/staff/'+id, body); else await apiPost('/api/staff', body);
-  closeModal(); renderStaff();
+  try{
+    let sid=id;
+    if(id) await apiPut('/api/staff/'+id, body); else { const res=await apiPost('/api/staff', body); sid=res.id; }
+    const fileInput=document.getElementById('st_photo');
+    if(fileInput && fileInput.files[0]){
+      try{ const url=await uploadPhoto(fileInput, null, sid); await apiPut('/api/staff/'+sid, {photo:url}); }catch(e){ alert('Staff saved but photo failed: '+e.message); }
+    }
+    closeModal(); renderStaff();
+  }catch(e){ alert(e.message); }
 }
 async function delStaff(id){ if(!confirm('Delete staff?')) return; await apiDel('/api/staff/'+id); renderStaff(); }
 
