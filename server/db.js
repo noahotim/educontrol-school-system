@@ -332,7 +332,7 @@ function init(){
     }
   }catch(e){ console.log('seed teachers',e.message); }
   // ensure maintenance table
-  try{ db.exec(`CREATE TABLE IF NOT EXISTS maintenance (id INTEGER PRIMARY KEY CHECK (id=1), enabled INTEGER DEFAULT 0, message TEXT DEFAULT 'System under maintenance — please try again later', enabled_by TEXT, enabled_at TEXT, enabled_until TEXT)`); const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get(); if(!m) db.prepare('INSERT INTO maintenance (id,enabled,message) VALUES (1,0,?)').run('System under maintenance — please try again later'); }catch(e){ console.log('maintenance table',e.message); }
+  try{ db.exec(`CREATE TABLE IF NOT EXISTS maintenance (id INTEGER PRIMARY KEY CHECK (id=1), enabled INTEGER DEFAULT 0, message TEXT DEFAULT 'Access to this system is temporarily locked.\nCONTACT NOAH to be authorised.', enabled_by TEXT, enabled_at TEXT, enabled_until TEXT)`); const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get(); if(!m) db.prepare('INSERT INTO maintenance (id,enabled,message) VALUES (1,0,?)').run('Access to this system is temporarily locked.\nCONTACT NOAH to be authorised.'); }catch(e){ console.log('maintenance table',e.message); }
   try{ db.exec(`ALTER TABLE maintenance ADD COLUMN enabled_until TEXT`); }catch(e){}
   // ensure must_change_password column (for existing DBs)
   try{ db.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0`); }catch(e){}

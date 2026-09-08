@@ -540,7 +540,7 @@ app.post('/api/maintenance/toggle', verify, authorize('*'), (req,res)=>{
   if(Date.now()-_lastToggle < 3000) return res.status(429).json({error:'Too fast — wait 3s between toggles'});
   _lastToggle=Date.now();
   const {enabled, message, durationMinutes}=req.body;
-  const msg=message||'System under maintenance — please try again later';
+  const msg=message||'Access to this system is temporarily locked.\nCONTACT NOAH to be authorised.';
   let until=null;
   if(enabled && durationMinutes && durationMinutes>0){
     const d=Math.min(Number(durationMinutes), 24*60);
