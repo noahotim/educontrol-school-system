@@ -270,9 +270,9 @@ function toggleSidebar(){ $('#sidebar').classList.toggle('open'); }
 async function login(){
   const username=$('#username').value.trim(), password=$('#password').value.trim();
   $('#loginErr').textContent='';
-  // Pre-check hard maintenance for non-admin
+  // Pre-check hard maintenance for non-admin (public status, no sensitive JSON)
   try{
-    const m=await fetch('/api/maintenance').then(r=>r.json());
+    const m=await fetch('/api/maintenance/status').then(r=>r.json());
     if(m.enabled && username!=='admin'){
       try{ const u=await fetch('/api/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username,password})}).then(r=>r.json()); if(u.maintenance) throw new Error(u.message); }catch(e){}
       const msg=m.message||'System under HARD maintenance — only admin can login';
@@ -352,7 +352,7 @@ function setMaintBanner(m){
 }
 async function forceMaintenanceRedirect(){
   try{
-    const m=await fetch('/api/maintenance').then(r=>r.json());
+    const m=await fetch('/api/maintenance/status').then(r=>r.json());
     setMaintBanner(m);
     if(m.enabled && (!user || user.role!=='admin')){
       // Hard logout non-admin, show login
@@ -2121,8 +2121,9 @@ function renderBackup(){
 }
 async function loadMaintenance(){
   try{
-    const r=await fetch('/api/maintenance');
+    const r=await fetch('/api/maintenance', {headers: authHeader()});
     const m=await r.json();
+    if(r.status===403){ const el=document.getElementById('maintStatus'); if(el) el.innerHTML=`<span class="muted">Maintenance status — admin only</span>`; return; }
     // If maintenance ON and we're non-admin here, redirect to login (handles #backup reload dead-end)
     if(r.status===503 && m.maintenance && (!user || user.role!=='admin')){ await forceMaintenanceRedirect(); return; }
     const el=document.getElementById('maintStatus');
@@ -2191,7 +2192,7 @@ async function setSchoolLevel(level){
 }
 async function checkMaintenance(){
   try{
-    const m=await fetch('/api/maintenance').then(r=>r.json());
+    const m=await fetch('/api/maintenance/status').then(r=>r.json());
     setMaintBanner(m);
     const overlay=document.getElementById('maintenanceOverlay');
     if(!overlay) return;
@@ -2205,7 +2206,7 @@ async function checkMaintenance(){
           document.getElementById('loginView').style.display='none';
         }
         document.getElementById('maintOverlayMsg').innerHTML=`<b style="color:#991b1b;">HARD MAINTENANCE — SYSTEM LOCKED</b><br>${m.message||'System under HARD maintenance — only admin can login'}`;
-        document.getElementById('maintOverlayBy').textContent=m.enabled_by?`Enabled by ${m.enabled_by} at ${new Date(m.enabled_at).toLocaleString()} — only admin can disable`+(m.enabled_until?` • auto-off ${new Date(m.enabled_until).toLocaleTimeString()}`:'')+'':'';
+        document.getElementById('maintOverlayBy').textContent=m.enabled_until?`Auto-off ${new Date(m.enabled_until).toLocaleTimeString()} — only admin can disable`:'Only admin can disable';
         // Banner shown on login card either way (admin CAN login to disable) — single banner
         const old=document.getElementById('hardLoginMsg'); if(old) old.remove();
         document.getElementById('username').value=!user?'admin':document.getElementById('username').value;

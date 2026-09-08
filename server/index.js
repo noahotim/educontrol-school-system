@@ -522,9 +522,16 @@ app.get('/api/sms/preview-bulk-results', verify, authorize('exams','sms','exams:
 });
 
 // Maintenance API — admin kill switch
-app.get('/api/maintenance', (req,res)=>{
+app.get('/api/maintenance', verify, (req,res)=>{
+  if(req.user.role!=='admin') return res.status(403).json({error:'Only admin can view maintenance status'});
   const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
   res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:'', enabled_until: m?m.enabled_until:null});
+});
+app.get('/api/maintenance/status', (req,res)=>{
+  const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
+  const enabled=!!(m&&m.enabled);
+  if(!enabled) return res.json({enabled:false});
+  res.json({enabled:true, message: m.message||'System under maintenance', enabled_until: m.enabled_until||null});
 });
 let _lastToggle=0;
 app.post('/api/maintenance/toggle', verify, authorize('*'), (req,res)=>{
