@@ -729,17 +729,21 @@ async function renderPayroll(){
 }
 async function genPayroll(){ const month=$('#payMonth').value; if(!month) return alert('Select month'); await apiPost('/api/payroll/generate',{month}); renderPayroll(); }
 
-// FEES
+// FEES — with Receipt PDF
 async function renderFees(){
   const fees=await apiGet('/api/fees-structure');
   const pays=await apiGet('/api/payments');
   const students=await apiGet('/api/students');
-  const map={}; students.forEach(s=> map[s.id]=s.first_name+' '+s.last_name+' ('+s.admission_no+')');
+  const map={}; students.forEach(s=> map[s.id]=s.first_name+' '+s.last_name+' ('+s.admission_no+') - '+s.class);
+  const cmap={}; students.forEach(s=> cmap[s.id]=s);
   $('#content').innerHTML=`
-  <div class="tabs"><button class="tab active" onclick="renderFees()">Payments</button><button class="tab" onclick="renderFeesStructure()">Fees Structure</button></div>
-  <div class="toolbar"><button class="btn btn-sm" onclick="openPayModal()"><i class="ri-add-line"></i> Record Payment</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Student</th><th>Amount</th><th>Method</th><th>Term</th><th>Date</th><th></th></tr></thead><tbody>${pays.map(p=>`<tr><td><b>${p.receipt_no||'-'}</b></td><td>${map[p.student_id]||p.student_id}</td><td>${fmtMoney(p.amount)}</td><td>${p.method||''}</td><td>${p.term||''}</td><td>${p.date||''}</td><td><button class="btn btn-sm btn-danger" onclick="delPay(${p.id})">Del</button></td></tr>`).join('')}</tbody></table></div>`;
+  <div class="tabs"><button class="tab active" onclick="renderFees()">Payments & Receipts</button><button class="tab" onclick="renderFeesStructure()">Fees Structure</button></div>
+  <div class="toolbar"><button class="btn btn-sm" onclick="openPayModal()"><i class="ri-add-line"></i> Record Payment</button><button class="btn btn-sm btn-outline" onclick="downloadFeesPDF()"><i class="ri-download-line"></i> Fees PDF</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Receipt</th><th>Student</th><th>Amount</th><th>Method</th><th>Term</th><th>Date</th><th>Actions</th></tr></thead><tbody>${pays.map(p=>`<tr><td><b>${p.receipt_no||'-'}</b></td><td>${map[p.student_id]||p.student_id}</td><td><b>${fmtMoney(p.amount)}</b></td><td><span class="badge badge-blue">${p.method||''}</span></td><td>${p.term||''}</td><td>${p.date||''}</td><td style="display:flex; gap:4px;"><button class="btn btn-sm" style="background:#0f172a; padding:5px 8px; font-size:11px;" onclick="downloadReceipt(${p.id})"><i class="ri-receipt-line"></i> Receipt</button><button class="btn btn-sm btn-outline" style="padding:5px 8px;" onclick="previewReceipt(${p.id})">View</button><button class="btn btn-sm btn-danger" style="padding:5px 8px;" onclick="delPay(${p.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
+  <div id="receiptPreview" style="margin-top:16px;"></div>`;
   window._studentsForPay=students;
+  window._payMap={}; pays.forEach(p=> window._payMap[p.id]=p);
+  window._studentMap=cmap;
 }
 function renderFeesStructure(){
   apiGet('/api/fees-structure').then(fees=>{
@@ -754,8 +758,98 @@ function openPayModal(){
   const opts=(window._studentsForPay||[]).map(s=>`<option value="${s.id}">${s.first_name} ${s.last_name} — ${s.class} (${s.admission_no})</option>`).join('');
   openModal(`<h3>Record Payment</h3><div class="form-grid" style="margin-top:12px"><div class="full"><label>Student*</label><select id="pay_stu" class="input">${opts}</select></div><div><label>Amount*</label><input id="pay_amt" type="number" class="input"></div><div><label>Method</label><select id="pay_met" class="input"><option>Cash</option><option>Bank</option><option>Mobile Money</option></select></div><div><label>Term</label><input id="pay_term" class="input" value="Term I"></div><div><label>Date</label><input id="pay_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="savePay()">Save & Print Receipt</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
 }
-async function savePay(){ const body={student_id:parseInt($('#pay_stu').value), amount:parseFloat($('#pay_amt').value), method:$('#pay_met').value, term:$('#pay_term').value, date:$('#pay_date').value, receipt_no:'REC'+Date.now().toString().slice(-7)}; if(!body.amount) return alert('Amount required'); await apiPost('/api/payments',body); closeModal(); renderFees(); }
+async function savePay(){ const body={student_id:parseInt($('#pay_stu').value), amount:parseFloat($('#pay_amt').value), method:$('#pay_met').value, term:$('#pay_term').value, date:$('#pay_date').value, receipt_no:'REC'+Date.now().toString().slice(-7)}; if(!body.amount) return alert('Amount required'); const res=await apiPost('/api/payments',body); closeModal(); await renderFees(); setTimeout(()=> previewReceipt(res.id), 400); }
 async function delPay(id){ if(!confirm('Delete payment?')) return; await apiDel('/api/payments/'+id); renderFees(); }
+function receiptHTML(p, stu){
+  const dateStr = new Date(p.date||today()).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  const amtWords = fmtMoney(p.amount) + ' Only';
+  return `
+  <div id="receiptPrint" class="rc-paper" style="width:210mm; min-height:148mm; max-height:148mm; border:1.5px dashed #0f172a; position:relative;">
+    <div style="position:absolute; top:8px; right:12px; font-size:9px; color:#94a3b8; border:1px solid #e2e8f0; padding:2px 6px; border-radius:999px;">Original • ${p.receipt_no}</div>
+    <div class="rc-head" style="padding:14px 16px;">
+      <div class="rc-crest" style="width:48px; height:48px; font-size:20px;">EC</div>
+      <div class="rc-title"><h2 style="font-size:17px;">EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala • 0772 000000 • info@educontrol.ac.ug</p><p style="font-weight:700; letter-spacing:.14em; font-size:10px;">OFFICIAL PAYMENT RECEIPT</p></div>
+      <div style="text-align:right; font-size:10px; background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px;"><b>No:</b> ${p.receipt_no}<br>Date: ${dateStr}<br>Term: ${p.term||'-'}</div>
+    </div>
+    <div style="padding:12px 16px; font-size:11px; display:grid; grid-template-columns:1fr 1fr; gap:10px; background:#f8fafc; border-bottom:1.2px solid #0f172a;">
+      <div>Received from: <b>${stu.first_name} ${stu.last_name}</b> <span class="muted">(${stu.admission_no} • ${stu.class})</span><br>Parent: <b>${stu.parent_name||'-'}</b> • ${stu.parent_phone||''}</div>
+      <div style="text-align:right;">Amount: <b style="font-size:15px; color:#1e40af;">${fmtMoney(p.amount)}</b><br>Method: <b>${p.method}</b> • Balance: <span class="muted">—</span></div>
+    </div>
+    <div style="padding:12px 16px;">
+      <table class="rc-table">
+        <thead><tr><th>DESCRIPTION</th><th style="width:35%; text-align:right;">AMOUNT (UGX)</th></tr></thead>
+        <tbody>
+          <tr><td>School Fees — ${p.term||'Term I'} <span class="muted">(${stu.class})</span></td><td style="text-align:right; font-weight:700;">${fmtMoney(p.amount)}</td></tr>
+          <tr style="background:#0f172a; color:#fff;"><td><b>TOTAL PAID</b></td><td style="text-align:right;"><b>${fmtMoney(p.amount)}</b></td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:8px; font-size:11px; color:#334155;">Amount in words: <b><i>${amtWords}</i></b></div>
+      <div style="margin-top:10px; display:flex; justify-content:space-between; font-size:10px; color:#64748b;"><span>Received by: <b style="color:#0f172a;">${user.name}</b> • ${user.role}</span><span>Thank you for your payment!</span></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; padding:10px 16px; font-size:10px; border-top:1.2px dashed #0f172a; background:#f8fafc;">
+      <div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 3px;"></div><b>Bursar</b><br><span class="muted">Sign & Stamp</span></div>
+      <div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 3px;"></div><b>Parent / Guardian</b><br><span class="muted">Sign</span></div>
+      <div style="font-size:9px; color:#94a3b8; text-align:right;">${p.receipt_no} • ${dateStr} • EduControl<br>Valid only with stamp</div>
+    </div>
+  </div>`;
+}
+async function previewReceipt(id){
+  const p = window._payMap[id] || await apiGet('/api/payments/'+id);
+  const stu = window._studentMap[p.student_id] || await apiGet('/api/students/'+p.student_id);
+  $('#receiptPreview').innerHTML = `<div class="a4-wrap" style="background:#e2e8f0; padding:16px; border-radius:12px; flex-direction:column; align-items:center;">${receiptHTML(p,stu)}<div class="no-print" style="display:flex; gap:8px; margin-top:10px;"><button class="btn btn-sm" onclick="downloadReceipt(${id})"><i class="ri-download-line"></i> Download Receipt PDF</button><button class="btn btn-sm btn-outline" onclick="window.print()"><i class="ri-printer-line"></i> Print</button><button class="btn btn-sm btn-outline" onclick="$('#receiptPreview').innerHTML=''">Close</button></div></div>`;
+  document.getElementById('receiptPreview').scrollIntoView({behavior:'smooth'});
+}
+async function downloadReceipt(id){
+  let p = window._payMap[id];
+  if(!p) p = await apiGet('/api/payments/'+id);
+  let stu = window._studentMap[p.student_id];
+  if(!stu) stu = await apiGet('/api/students/'+p.student_id);
+  // Ensure preview exists for capture
+  const prev = document.getElementById('receiptPreview');
+  const wasEmpty = !prev.innerHTML.includes('receiptPrint');
+  if(wasEmpty){ await previewReceipt(id); await new Promise(r=>setTimeout(r,600)); }
+  const el = document.getElementById('receiptPrint');
+  if(!el) return alert('Receipt not ready');
+  const btn = document.querySelector('button[onclick="downloadReceipt('+id+')"]');
+  const old = btn ? btn.innerHTML : '';
+  if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Generating…';
+  try{
+    const {jsPDF}=window.jspdf;
+    const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff', logging:false});
+    const imgData=canvas.toDataURL('image/png',1.0);
+    const pdf=new jsPDF('p','mm','a4');
+    const pageW=210, pageH=297, margin=8;
+    const imgW=pageW - margin*2;
+    const imgH=canvas.height * imgW / canvas.width;
+    // Receipt is half-A4 (148mm) — center vertically
+    const y = (pageH - imgH)/2;
+    pdf.addImage(imgData,'PNG',margin, Math.max(10,y), imgW, Math.min(imgH, 140), undefined,'FAST');
+    pdf.save(`${p.receipt_no}_${stu.first_name}_${stu.last_name}_Receipt.pdf`);
+  }catch(e){ alert('PDF error: '+e.message);} finally{ if(btn) btn.innerHTML=old; }
+}
+async function downloadFeesPDF(){
+  const pays=await apiGet('/api/payments');
+  const students=await apiGet('/api/students');
+  const map={}; students.forEach(s=>map[s.id]=s.first_name+' '+s.last_name);
+  const total = pays.reduce((a,b)=>a+Number(b.amount||0),0);
+  const html = `
+  <div id="feesPrint" class="rc-paper">
+    <div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Fees Collection Report • ${today()}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>Total:</b> ${fmtMoney(total)}<br>${pays.length} payments</div></div>
+    <div style="padding:12px 16px;"><table class="rc-table"><thead><tr><th>Receipt</th><th>Student</th><th>Amount</th><th>Method</th><th>Term</th><th>Date</th></tr></thead><tbody>${pays.slice(0,40).map(p=>`<tr><td>${p.receipt_no}</td><td>${map[p.student_id]||p.student_id}</td><td>${fmtMoney(p.amount)}</td><td>${p.method}</td><td>${p.term}</td><td>${p.date}</td></tr>`).join('')}</tbody><tfoot><tr style="background:#0f172a; color:#fff;"><td colspan=2><b>TOTAL</b></td><td><b>${fmtMoney(total)}</b></td><td colspan=3></td></tr></tfoot></table></div>
+    <div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Finance • ${new Date().toLocaleDateString('en-GB')}</div>
+  </div>`;
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=html; document.body.appendChild(wrap);
+  const el=wrap.querySelector('#feesPrint');
+  const {jsPDF}=window.jspdf;
+  const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'});
+  const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4');
+  const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST');
+  else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Fees_Report_${today()}_A4.pdf`);
+  document.body.removeChild(wrap);
+}
 
 // EXPENSES & INCOME
 async function renderExpenses(){
@@ -775,21 +869,100 @@ async function saveInc(){ await apiPost('/api/incomes',{source:$('#in_src').valu
 // REPORTS
 async function renderReports(){
   $('#content').innerHTML=`
-  <div class="card"><h4>Financial Reports</h4>
-    <div class="form-grid" style="margin-top:12px"><div><label>From</label><input id="r_from" type="date" class="input" value="2026-01-01"></div><div><label>To</label><input id="r_to" type="date" class="input" value="${today()}"></div><div style="display:flex;gap:8px;align-items:end"><button class="btn btn-sm" onclick="loadReports()">Generate</button><button class="btn btn-sm btn-outline" onclick="window.print()">Print</button></div></div>
+  <div class="card"><h4><i class="ri-file-paper-2-line"></i> Financial Reports — A4 PDF Ready</h4>
+    <p class="muted">Income Statement & Balance Sheet — generate A4 premium report with school header, period, and signatures. Export as PDF.</p>
+    <div class="form-grid" style="margin-top:12px"><div><label>From</label><input id="r_from" type="date" class="input" value="2026-01-01"></div><div><label>To</label><input id="r_to" type="date" class="input" value="${today()}"></div><div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;"><button class="btn btn-sm" onclick="loadReports()"><i class="ri-refresh-line"></i> Generate</button><button class="btn btn-sm btn-outline" onclick="downloadFinancePDF()"><i class="ri-download-line"></i> Download PDF (A4)</button><button class="btn btn-sm btn-outline" onclick="window.print()"><i class="ri-printer-line"></i> Print</button></div></div>
     <div id="repOut" style="margin-top:16px"></div>
   </div>`;
   loadReports();
 }
 async function loadReports(){
   const from=$('#r_from')?.value, to=$('#r_to')?.value;
+  const period = (from && to) ? `${from} → ${to}` : 'All Time';
+  const todayStr = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
   const inc=from? await apiGet(`/api/reports/income-statement?from=${from}&to=${to}`): await apiGet('/api/reports/income-statement');
   const bal=await apiGet('/api/reports/balance-sheet');
+  const dashboard = await apiGet('/api/dashboard');
   $('#repOut').innerHTML=`
-  <div class="grid grid2">
-    <div class="card" style="border:1px solid var(--border)"><h4>Income Statement (${from||'all'} → ${to||'all'})</h4><table style="margin-top:10px"><tr><td>Total Income (Fees + Other)</td><td style="text-align:right"><b>${fmtMoney(inc.income)}</b></td></tr><tr><td>Total Expenses</td><td style="text-align:right;color:var(--danger)"><b>${fmtMoney(inc.expense)}</b></td></tr><tr style="background:#f8fafc"><td><b>Net Income</b></td><td style="text-align:right;color:${inc.gross>=0?'var(--success)':'var(--danger)'}"><b>${fmtMoney(inc.gross)}</b></td></tr></table></div>
-    <div class="card"><h4>Balance Sheet</h4><table style="margin-top:10px"><tr><td>Cash</td><td style="text-align:right">${fmtMoney(bal.cash)}</td></tr><tr><td>Inventory Assets</td><td style="text-align:right">${fmtMoney(bal.inventory)}</td></tr><tr style="background:#f8fafc"><td><b>Total Assets</b></td><td style="text-align:right"><b>${fmtMoney(bal.assets)}</b></td></tr><tr><td>Liabilities</td><td style="text-align:right">${fmtMoney(bal.liabilities)}</td></tr><tr><td><b>Equity</b></td><td style="text-align:right"><b>${fmtMoney(bal.equity)}</b></td></tr></table></div>
+  <div id="financePrint" class="rc-paper" style="padding:0;">
+    <div class="rc-head">
+      <div class="rc-crest">EC</div>
+      <div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala • Tel: 0772 000000 • info@educontrol.ac.ug</p><p style="margin-top:4px; font-weight:700; letter-spacing:.14em; font-size:11px;">FINANCIAL REPORTS • AUDIT READY</p></div>
+      <div style="text-align:right; font-size:11px; line-height:1.4;"><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px;"><b>PERIOD</b><br>${period}</div><div style="margin-top:6px;">Date: ${todayStr}</div></div>
+    </div>
+    <div style="padding:12px 16px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; background:#f8fafc; border-bottom:1.2px solid #0f172a; font-size:11px;">
+      <div>Prepared by: <b>${user.name}</b> <span class="badge badge-blue">${user.role}</span></div><div>Currency: <b>UGX</b> • All amounts</div><div style="text-align:right;">Report ID: <b>FIN-${Date.now().toString().slice(-8)}</b></div>
+    </div>
+    <div style="padding:14px 16px;">
+      <h4 style="font-size:13px; font-weight:800; color:#0f172a; border-left:4px solid #1e40af; padding-left:8px;">Income Statement</h4>
+      <p class="muted" style="font-size:11px; margin:4px 0 8px;">Period: ${period} • Generated ${todayStr}</p>
+      <table class="rc-table">
+        <thead><tr><th>DESCRIPTION</th><th style="width:38%; text-align:right;">AMOUNT (UGX)</th></tr></thead>
+        <tbody>
+          <tr><td>Total Income <span class="muted">(Fees + Other Income)</span></td><td style="text-align:right; font-weight:700;">${fmtMoney(inc.income)}</td></tr>
+          <tr><td>Total Expenses</td><td style="text-align:right; font-weight:700; color:var(--danger);">${fmtMoney(inc.expense)}</td></tr>
+          <tr style="background:#0f172a; color:#fff;"><td><b>NET INCOME</b></td><td style="text-align:right;"><b style="color:${inc.gross>=0?'#86efac':'#fecaca'}">${fmtMoney(inc.gross)}</b> ${inc.gross>=0?'▲ Profit':'▼ Loss'}</td></tr>
+        </tbody>
+      </table>
+      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px;">
+        <div class="rc-kpi"><div class="muted">Income</div><div class="v" style="font-size:14px;">${fmtMoney(inc.income)}</div></div>
+        <div class="rc-kpi"><div class="muted">Expenses</div><div class="v" style="font-size:14px; color:var(--danger);">${fmtMoney(inc.expense)}</div></div>
+        <div class="rc-kpi"><div class="muted">Net</div><div class="v" style="font-size:14px; color:${inc.gross>=0?'var(--success)':'var(--danger)'};">${fmtMoney(inc.gross)}</div></div>
+      </div>
+      <h4 style="font-size:13px; font-weight:800; color:#0f172a; border-left:4px solid #10b981; padding-left:8px; margin-top:16px;">Balance Sheet</h4>
+      <table class="rc-table" style="margin-top:8px;">
+        <thead><tr><th>ITEM</th><th style="width:38%; text-align:right;">VALUE (UGX)</th></tr></thead>
+        <tbody>
+          <tr><td>Cash at Hand / Bank</td><td style="text-align:right;">${fmtMoney(bal.cash)}</td></tr>
+          <tr><td>Inventory Assets</td><td style="text-align:right;">${fmtMoney(bal.inventory)}</td></tr>
+          <tr style="background:#f8fafc; font-weight:700;"><td>Total Assets</td><td style="text-align:right;">${fmtMoney(bal.assets)}</td></tr>
+          <tr><td>Liabilities</td><td style="text-align:right;">${fmtMoney(bal.liabilities)}</td></tr>
+          <tr style="background:#0f172a; color:#fff;"><td><b>Equity</b></td><td style="text-align:right;"><b>${fmtMoney(bal.equity)}</b></td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:10px; display:grid; grid-template-columns:repeat(2,1fr); gap:8px; font-size:11px;">
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px;"><b>Fees Trend</b><br><span class="muted">${dashboard.feesByMonth.map(m=>m.m+': '+fmtMoney(m.total)).join(' • ') || 'No data'}</span></div>
+        <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px;"><b>Expenses by Category</b><br><span class="muted">${dashboard.expensesByCat.map(e=>e.category+': '+fmtMoney(e.total)).join(' • ') || 'No data'}</span></div>
+      </div>
+    </div>
+    <div class="rc-scale" style="background:#f8fafc; border-top:1.2px dashed #0f172a;">This is a computer-generated financial statement. Figures extracted from <b>Payments + Incomes – Expenses</b>. Verify with source receipts. • EduControl Finance Module</div>
+    <div class="rc-sign">
+      <div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Bursar</b><br><span class="muted">Sign & Stamp</span></div></div>
+      <div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Approve</span></div></div>
+      <div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Auditor</b><br><span class="muted">Sign</span></div></div>
+    </div>
+    <div style="text-align:center; font-size:9px; color:#0f172a; font-weight:600; padding:7px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl School System • Financial Reports • ${todayStr} • Period: ${period}</div>
+  </div>
+  <div class="no-print" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+    <button class="btn btn-sm" onclick="downloadFinancePDF()"><i class="ri-download-line"></i> Download PDF (A4)</button>
+    <button class="btn btn-sm btn-outline" onclick="window.print()"><i class="ri-printer-line"></i> Print</button>
+    <span class="muted" style="align-self:center; font-size:11px;">A4 • Audit-ready • Includes Income Statement + Balance Sheet</span>
   </div>`;
+}
+async function downloadFinancePDF(){
+  const el = document.getElementById('financePrint');
+  if(!el) return alert('Generate report first');
+  const btn = document.querySelector('button[onclick="downloadFinancePDF()"]');
+  const old = btn ? btn.innerHTML : '';
+  if(btn) btn.innerHTML = '<i class="ri-loader-4-line"></i> Generating…';
+  try{
+    const { jsPDF } = window.jspdf;
+    const canvas = await html2canvas(el, {scale:3, useCORS:true, backgroundColor:'#ffffff', logging:false, windowWidth: el.scrollWidth, windowHeight: el.scrollHeight});
+    const imgData = canvas.toDataURL('image/png',1.0);
+    const pdf = new jsPDF('p','mm','a4');
+    const pageW=210, pageH=297, margin=5;
+    const imgW = pageW - margin*2;
+    const imgH = canvas.height * imgW / canvas.width;
+    if(imgH <= pageH - margin*2){
+      pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST');
+    } else {
+      let y=margin, remaining=imgH, pos=0;
+      while(remaining>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); remaining-=pageH; if(remaining>0){ pdf.addPage(); pos+=pageH; } else break; }
+    }
+    const from = document.getElementById('r_from')?.value || 'all';
+    const to = document.getElementById('r_to')?.value || 'all';
+    pdf.save(`Finance_Report_${from}_to_${to}_A4.pdf`);
+  }catch(e){ alert('PDF error: '+e.message); } finally{ if(btn) btn.innerHTML=old; }
 }
 
 // PROCUREMENT
