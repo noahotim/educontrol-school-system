@@ -269,6 +269,25 @@ function init(){
     year TEXT,
     date TEXT
   );
+  CREATE TABLE IF NOT EXISTS teacher_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    subject TEXT NOT NULL,
+    class TEXT NOT NULL,
+    UNIQUE(user_id, subject, class)
+  );
+  CREATE TABLE IF NOT EXISTS compiled_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    total REAL,
+    average REAL,
+    aggregate INTEGER,
+    division TEXT,
+    position INTEGER,
+    compiled_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(exam_id, student_id)
+  );
   `);
   // ensure admin user
   const row = db.prepare('SELECT id FROM users WHERE username=?').get('admin');
@@ -287,6 +306,32 @@ function init(){
   if(s.n===0){
     ['Mathematics','English','Science','Social Studies','RE','Art','Music','PE','ICT','Agriculture','Commerce','Physics','Chemistry','Biology','History','Geography','Literature'].forEach(n=> db.prepare('INSERT OR IGNORE INTO subjects (name,code) VALUES (?,?)').run(n, n.slice(0,3).toUpperCase()));
   }
+  // ensure class_teacher & subject_teacher demo users
+  try{
+    const bcrypt=require('bcryptjs');
+    const add=(u,p,r,nm)=>{ if(!db.prepare('SELECT id FROM users WHERE username=?').get(u)){ const h=bcrypt.hashSync(p,10); db.prepare('INSERT INTO users (username,password,role,name,email) VALUES (?,?,?,?,?)').run(u,h,r,nm,u+'@school.local'); console.log('Created '+u+' / '+p); } };
+    add('classteacher','class123','class_teacher','Ms. Nalwoga (Class Teacher)');
+    add('subjectteacher','subject123','subject_teacher','Mr. Tumusiime (Subject Teacher)');
+    // auto-assign subjects to subject teacher for demo
+    const st=db.prepare('SELECT id FROM users WHERE username=?').get('subjectteacher');
+    if(st){
+      const cnt=db.prepare('SELECT count(*) as n FROM teacher_assignments WHERE user_id=?').get(st.id).n;
+      if(cnt===0){
+        [['Mathematics','P5'],['Mathematics','P6'],['Science','P5'],['English','P5']].forEach(([sub,cls])=>{ try{ db.prepare('INSERT OR IGNORE INTO teacher_assignments (user_id,subject,class) VALUES (?,?,?)').run(st.id,sub,cls);}catch(e){} });
+      }
+    }
+    const ct=db.prepare('SELECT id FROM users WHERE username=?').get('classteacher');
+    if(ct){
+      const cnt2=db.prepare('SELECT count(*) as n FROM teacher_assignments WHERE user_id=?').get(ct.id).n;
+      if(cnt2===0){
+        [['P5','P5'],['P5','P6']].forEach(([sub,cls])=>{ try{ db.prepare('INSERT OR IGNORE INTO teacher_assignments (user_id,subject,class) VALUES (?,?,?)').run(ct.id,sub,cls);}catch(e){} });
+        // class teacher assigned to class P5
+        try{ db.prepare('INSERT OR IGNORE INTO teacher_assignments (user_id,subject,class) VALUES (?,?,?)').run(ct.id,'ALL','P5'); }catch(e){}
+      }
+    }
+  }catch(e){ console.log('seed teachers',e.message); }
+  // ensure maintenance table
+  try{ db.exec(`CREATE TABLE IF NOT EXISTS maintenance (id INTEGER PRIMARY KEY CHECK (id=1), enabled INTEGER DEFAULT 0, message TEXT DEFAULT 'System under maintenance — please try again later', enabled_by TEXT, enabled_at TEXT)`); const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get(); if(!m) db.prepare('INSERT INTO maintenance (id,enabled,message) VALUES (1,0,?)').run('System under maintenance — please try again later'); }catch(e){ console.log('maintenance table',e.message); }
 }
 init();
 module.exports = db;

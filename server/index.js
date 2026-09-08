@@ -13,6 +13,44 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({limit:'10mb'}));
 app.use(express.urlencoded({extended:true}));
+const multer=require('multer');
+const uploadDir=path.join(__dirname,'../public/uploads');
+fs.mkdirSync(uploadDir,{recursive:true});
+const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadDir), filename:(req,file,cb)=>{ const ext=path.extname(file.originalname)||'.jpg'; cb(null, Date.now()+'_'+Math.random().toString(36).slice(2,6)+ext); }});
+const upload=multer({storage, limits:{fileSize:2*1024*1024}, fileFilter:(req,file,cb)=>{ if(!file.mimetype.startsWith('image/')) return cb(new Error('Only images')); cb(null,null); }});
+app.use('/uploads', express.static(uploadDir));
+app.post('/api/upload/photo', verify, authorize('students','staff','*'), upload.single('photo'), (req,res)=>{
+  if(!req.file) return res.status(400).json({error:'No file'});
+  const url=`/uploads/${req.file.filename}`;
+  // optionally update student/staff if ids provided
+  if(req.body.student_id){ try{ db.prepare('UPDATE students SET photo=? WHERE id=?').run(url, req.body.student_id); }catch(e){} }
+  if(req.body.staff_id){ try{ db.prepare('UPDATE staff SET photo=? WHERE id=?').run(url, req.body.staff_id); }catch(e){} }
+  res.json({url, filename:req.file.filename});
+});
+
+// Maintenance kill switch — blocks non-admin when enabled
+function maintenanceGuard(req,res,next){
+  try{
+    const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
+    if(m && m.enabled){
+      // allow admin, allow login, allow maintenance status, allow backup with key
+      const isLogin = req.path==='/api/login';
+      const isMaintenanceGet = req.path==='/api/maintenance';
+      const isBackupKey = req.path==='/api/backup' && req.query.key;
+      if(isLogin || isMaintenanceGet || isBackupKey) return next();
+      // verify token if present to check admin
+      let isAdmin=false;
+      const h=req.headers.authorization;
+      let tok=null;
+      if(h) tok=h.replace('Bearer ',''); else if(req.query && req.query.token) tok=req.query.token;
+      if(tok){ try{ const {SECRET}=require('./auth'); const jwt=require('jsonwebtoken'); const u=jwt.verify(tok, SECRET); if(u.role==='admin') isAdmin=true; }catch(e){} }
+      if(isAdmin) return next();
+      return res.status(503).json({maintenance:true, message: m.message || 'System under maintenance', enabled_at: m.enabled_at, enabled_by: m.enabled_by});
+    }
+  }catch(e){}
+  next();
+}
+app.use(maintenanceGuard);
 
 // Auth routes
 app.post('/api/login', (req,res)=>{
@@ -34,11 +72,13 @@ app.post('/api/register', verify, (req,res)=>{
 app.get('/api/me', verify, (req,res)=> res.json(req.user));
 app.get('/api/users', verify, role('admin','headteacher'), (req,res)=> res.json(db.prepare('SELECT id,username,role,name,email,created_at FROM users').all()));
 
-// RBAC — who can do what
+// RBAC — who can do what — class_teacher compiles, subject_teacher enters marks (auto-routed)
 const RBAC = {
   admin: ['*'],
   headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff:read','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
   teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','staff:read','events:read','transport:read'],
+  class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','staff:read','events:read','transport:read'],
+  subject_teacher: ['dashboard','students:read','exams:enter','aitutor:read','events:read'],
   bursar: ['dashboard','students:read','staff:read','fees','expenses','reports','payroll','procurement','inventory','events:read','sms'],
   nurse: ['dashboard','students:read','sickbay','events:read','aitutor:read'],
 };
@@ -60,6 +100,55 @@ function authorize(...perms){
   };
 }
 app.get('/api/roles', verify, (req,res)=> res.json({roles: RBAC, me: req.user.role}));
+
+// Teacher assignments — admin/headteacher assigns, teachers auto-routed
+app.get('/api/teacher-assignments', verify, authorize('staff','staff:read'), (req,res)=>{
+  const rows=db.prepare('SELECT ta.*, u.username, u.name, u.role FROM teacher_assignments ta JOIN users u ON u.id=ta.user_id ORDER BY u.username').all();
+  res.json(rows);
+});
+app.post('/api/teacher-assignments', verify, authorize('staff'), (req,res)=>{
+  const {user_id, subject, class:cls}=req.body;
+  if(!user_id||!subject||!cls) return res.status(400).json({error:'user_id, subject, class required'});
+  try{ const r=db.prepare('INSERT OR IGNORE INTO teacher_assignments (user_id,subject,class) VALUES (?,?,?)').run(user_id,subject,cls); res.json({id:r.lastInsertRowid}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.delete('/api/teacher-assignments/:id', verify, authorize('staff'), (req,res)=>{ db.prepare('DELETE FROM teacher_assignments WHERE id=?').run(req.params.id); res.json({ok:true}); });
+app.get('/api/my-assignments', verify, (req,res)=>{
+  const rows=db.prepare('SELECT * FROM teacher_assignments WHERE user_id=?').all(req.user.id);
+  res.json(rows);
+});
+// Compile results — class_teacher one-click (auto aggregates all subjects)
+app.post('/api/results/compile/:examId', verify, authorize('exams:compile','exams','*'), (req,res)=>{
+  const examId=req.params.examId;
+  const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(examId);
+  if(!exam) return res.status(404).json({error:'Exam not found'});
+  const results=db.prepare('SELECT r.*, s.first_name, s.last_name, s.class FROM results r JOIN students s ON s.id=r.student_id WHERE r.exam_id=?').all(examId);
+  if(!results.length) return res.status(400).json({error:'No marks entered yet — subject teachers must enter marks first'});
+  // group by student
+  const byStudent={};
+  for(const r of results){
+    if(!byStudent[r.student_id]) byStudent[r.student_id]={student_id:r.student_id, name:r.first_name+' '+r.last_name, class:r.class, marks:[]};
+    byStudent[r.student_id].marks.push(r.marks);
+  }
+  const compiled=[];
+  for(const sid in byStudent){
+    const m=byStudent[sid].marks;
+    const total=m.reduce((a,b)=>a+Number(b),0);
+    const avg=total/m.length;
+    let agg=0; for(const mk of m){ const mm=Number(mk); if(mm>=80) agg+=1; else if(mm>=70) agg+=2; else if(mm>=60) agg+=3; else if(mm>=50) agg+=4; else if(mm>=40) agg+=5; else if(mm>=35) agg+=6; else if(mm>=28) agg+=7; else if(mm>=20) agg+=8; else agg+=9; }
+    let div='U'; if(avg>=80) div='I'; else if(avg>=60) div='II'; else if(avg>=50) div='III'; else if(avg>=40) div='IV';
+    compiled.push({student_id:sid, total, average: Number(avg.toFixed(1)), aggregate:agg, division:div});
+  }
+  compiled.sort((a,b)=> a.aggregate - b.aggregate || b.average - a.average);
+  compiled.forEach((c,i)=> c.position=i+1);
+  const ins=db.prepare('INSERT OR REPLACE INTO compiled_results (exam_id, student_id, total, average, aggregate, division, position) VALUES (?,?,?,?,?,?,?)');
+  const tx=db.transaction(()=>{ for(const c of compiled) ins.run(examId,c.student_id,c.total,c.average,c.aggregate,c.division,c.position); });
+  tx();
+  res.json({compiled: compiled.length, exam: exam.name, top: compiled.slice(0,3), note: 'Auto-compiled — report cards & positions ready. Class teacher just clicked Compile.'});
+});
+app.get('/api/results/compiled/:examId', verify, authorize('exams:read','exams:compile','*'), (req,res)=>{
+  const rows=db.prepare('SELECT c.*, s.first_name, s.last_name, s.admission_no, s.class FROM compiled_results c JOIN students s ON s.id=c.student_id WHERE c.exam_id=? ORDER BY c.position').all(req.params.examId);
+  res.json(rows);
+});
 
 // Helper to create CRUD with optional perm
 function crud(table, permBase){
@@ -158,12 +247,29 @@ app.get('/api/results', verify, authorize('exams:read','aitutor:read','dashboard
   if(student_id){ q+=' AND r.student_id=?'; p.push(student_id);}
   res.json(db.prepare(q).all(...p));
 });
-app.post('/api/results/bulk', verify, authorize('exams'), (req,res)=>{
+app.post('/api/results/bulk', verify, authorize('exams','exams:enter'), (req,res)=>{
   const {exam_id, subject, entries} = req.body;
+  // Auto-routing: subject teachers can only enter for their assigned subject/class
+  if(req.user.role==='subject_teacher'){
+    const assigns=db.prepare('SELECT * FROM teacher_assignments WHERE user_id=?').all(req.user.id);
+    const allowedSubs=new Set(assigns.map(a=>a.subject));
+    const allowedClasses=new Set(assigns.map(a=>a.class));
+    if(!allowedSubs.has(subject) && !allowedSubs.has('ALL')){
+      return res.status(403).json({error:`You are not assigned to ${subject}. Your subjects: ${[...allowedSubs].join(', ')||'none'}. Ask admin to assign.`});
+    }
+    // verify each student's class is allowed
+    for(const e of entries){
+      const st=db.prepare('SELECT class FROM students WHERE id=?').get(e.student_id);
+      if(!st) continue;
+      if(!allowedClasses.has(st.class) && !allowedClasses.has('ALL') && ![...allowedClasses].some(c=>c===st.class)){
+        return res.status(403).json({error:`You are not assigned to class ${st.class} for ${subject}. Your classes: ${[...allowedClasses].join(', ')}`});
+      }
+    }
+  }
   const stmt=db.prepare('INSERT OR REPLACE INTO results (exam_id, student_id, subject, marks, grade) VALUES (?,?,?,?,?)');
   function grade(m){ if(m>=80) return 'D1'; if(m>=70) return 'D2'; if(m>=60) return 'C3'; if(m>=50) return 'C4'; if(m>=40) return 'C5'; if(m>=35) return 'C6'; if(m>=28) return 'P7'; if(m>=20) return 'P8'; return 'F9';}
   const tx=db.transaction((en)=>{ for(const e of en) stmt.run(exam_id, e.student_id, subject, e.marks, grade(e.marks)); });
-  try{ tx(entries); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message});}
+  try{ tx(entries); res.json({ok:true, routed: `Auto-routed ${entries.length} marks for ${subject} to exam ${exam_id}`}); }catch(e){ res.status(400).json({error:e.message});}
 });
 
 // Payroll generate
@@ -347,6 +453,20 @@ app.get('/api/sms/preview-bulk-results', verify, authorize('exams','sms','exams:
   }
   const preview = Object.values(byStudent).map(s=> `Dear Parent, ${s.name} (${s.class}) results: ${s.subjects.join(', ')} - EduControl`).slice(0,3);
   res.json({exam: exam?exam.name:'', count: Object.keys(byStudent).length, preview});
+});
+
+// Maintenance API — admin kill switch
+app.get('/api/maintenance', (req,res)=>{
+  const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
+  res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:''});
+});
+app.post('/api/maintenance/toggle', verify, authorize('*'), (req,res)=>{
+  // only admin should toggle — check role
+  if(req.user.role!=='admin') return res.status(403).json({error:'Only admin can toggle maintenance'});
+  const {enabled, message}=req.body;
+  const msg=message||'System under maintenance — please try again later';
+  db.prepare('UPDATE maintenance SET enabled=?, message=?, enabled_by=?, enabled_at=? WHERE id=1').run(enabled?1:0, msg, req.user.username, new Date().toISOString());
+  res.json({enabled: !!enabled, message: msg});
 });
 
 // Auto-seed on first run (Render free has empty DB)
