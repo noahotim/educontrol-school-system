@@ -282,6 +282,25 @@ app.post('/api/students', verify, authorize('students'), (req,res)=>{
     res.json({id:r.lastInsertRowid});
   }catch(e){ res.status(400).json({error:e.message});}
 });
+app.post('/api/students/bulk', verify, authorize('students'), (req,res)=>{
+  const {students: list, term} = req.body;
+  if(!Array.isArray(list) || !list.length) return res.status(400).json({error:'No students provided'});
+  const stmt = db.prepare(`INSERT OR IGNORE INTO students (admission_no, first_name, last_name, gender, dob, class, parent_name, parent_phone, address, admission_date, status) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+  const getAdm = db.prepare('SELECT id FROM students WHERE admission_no=?');
+  let inserted=0, skipped=0;
+  const tx = db.transaction((rows)=>{
+    for(const s of rows){
+      const adm = s.admission_no || ('ADM'+Date.now().toString().slice(-6)+Math.random().toString(36).slice(2,4).toUpperCase());
+      const exists = getAdm.get(adm);
+      if(exists){ skipped++; continue; }
+      try{
+        stmt.run(adm, s.first_name||'Unknown', s.last_name||'', s.gender||'', s.dob||'', s.class||'', s.parent_name||'', s.parent_phone||'', s.address||'', s.admission_date||dayjs().format('YYYY-MM-DD'), s.status||'Active');
+        inserted++;
+      }catch(e){ skipped++; }
+    }
+  });
+  try{ tx(list); res.json({inserted, skipped, total: list.length, term: term||''}); }catch(e){ res.status(400).json({error:e.message}); }
+});
 app.put('/api/students/:id', verify, authorize('students'), (req,res)=>{
   const d=req.body; const keys=Object.keys(d).filter(k=>k!=='id');
   const set=keys.map(k=> `${k}=?`).join(',');
@@ -289,6 +308,29 @@ app.put('/api/students/:id', verify, authorize('students'), (req,res)=>{
 });
 app.delete('/api/students/:id', verify, authorize('students'), (req,res)=>{ db.prepare('DELETE FROM students WHERE id=?').run(req.params.id); res.json({ok:true}); });
 app.get('/api/students/:id', verify, authorize('students:read'), (req,res)=>{ const r=db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id); if(!r) return res.status(404).json({error:'Not found'}); res.json(r);});
+// Public verification — QR scans here to show whole profile (registration, class, performance, fees)
+app.get('/api/verify-student', (req,res)=>{
+  const adm=(req.query.adm||req.query.admission_no||'').trim();
+  if(!adm) return res.status(400).json({error:'adm required'});
+  const s=db.prepare('SELECT * FROM students WHERE admission_no=?').get(adm);
+  if(!s) return res.status(404).json({error:'Student not found'});
+  // Fees
+  let fees=[]; try{ fees=db.prepare('SELECT * FROM fees WHERE student_id=?').all(s.id); }catch(e){}
+  let payments=[]; try{ payments=db.prepare('SELECT * FROM payments WHERE student_id=?').all(s.id); }catch(e){}
+  const totalDue=fees.reduce((a,f)=> a+(Number(f.amount)||0),0);
+  const totalPaid=payments.reduce((a,p)=> a+(Number(p.amount)||0),0);
+  const balance=Math.max(0, totalDue-totalPaid);
+  const cleared = totalDue>0 ? balance===0 : true;
+  // Performance — all results
+  let results=[]; try{ results=db.prepare('SELECT r.*, e.name as exam_name, e.term, e.year FROM results r JOIN exams e ON e.id=r.exam_id WHERE r.student_id=? ORDER BY e.year DESC, e.term').all(s.id); }catch(e){}
+  const avg = results.length ? (results.reduce((a,r)=>a+(Number(r.marks)||0),0)/results.length).toFixed(1) : null;
+  const best = results.length ? Math.max(...results.map(r=>Number(r.marks)||0)) : null;
+  res.json({
+    student:{admission_no:s.admission_no, first_name:s.first_name, last_name:s.last_name, class:s.class, gender:s.gender, dob:s.dob, status:s.status, registration_status:s.status, admission_date:s.admission_date, parent_name:s.parent_name, parent_phone:s.parent_phone},
+    fees:{totalDue, totalPaid, balance, cleared, status: cleared?'Fully Cleared':`Balance ${balance.toLocaleString()}`},
+    performance:{count: results.length, average: avg, best, results: results.slice(0,12).map(r=>({exam:r.exam_name, term:r.term, subject:r.subject, marks:r.marks, grade:r.grade}))}
+  });
+});
 
 // Attendance bulk
 app.post('/api/attendance/bulk', verify, authorize('attendance'), (req,res)=>{
