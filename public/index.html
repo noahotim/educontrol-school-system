@@ -693,12 +693,90 @@ async function loadPerf(){
   if(labels.length) new Chart($('#perfChart'),{type:'bar', data:{labels, datasets:[{label:'Avg %', data, backgroundColor:'#10b981'}]}, options:{plugins:{legend:{display:false}}}});
 }
 
-// STAFF
+// STAFF — with ID Card + List PDF
 async function renderStaff(){
   const staff=await apiGet('/api/staff');
   $('#content').innerHTML=`
-  <div class="toolbar"><button class="btn btn-sm" onclick="openStaffModal()"><i class="ri-add-line"></i> Add Staff</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Staff No</th><th>Name</th><th>Dept</th><th>Role</th><th>Salary</th><th>Status</th><th></th></tr></thead><tbody>${staff.map(s=>`<tr><td>${s.staff_no}</td><td><b>${s.name}</b><div class="muted" style="font-size:11px">${s.email||''} | ${s.phone||''}</div></td><td>${s.department||''}</td><td>${s.role||''}</td><td>${fmtMoney(s.salary)}</td><td><span class="badge badge-green">${s.status}</span></td><td><button class="btn btn-sm btn-outline" onclick="openStaffModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" onclick="delStaff(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>`;
+  <div class="toolbar" style="flex-wrap:wrap;"><button class="btn btn-sm" onclick="openStaffModal()"><i class="ri-add-line"></i> Add Staff</button><button class="btn btn-sm btn-outline" onclick="downloadStaffPDF()"><i class="ri-download-line"></i> Staff List PDF (A4)</button><button class="btn btn-sm btn-outline" onclick="downloadStaffCardsPDF()"><i class="ri-contacts-line"></i> ID Cards PDF</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Staff No</th><th>Name</th><th>Dept</th><th>Role</th><th>Salary</th><th>Status</th><th>Actions</th></tr></thead><tbody>${staff.map(s=>`<tr><td><b>${s.staff_no}</b></td><td><b>${s.name}</b><div class="muted" style="font-size:11px">${s.email||''} | ${s.phone||''}</div><div class="muted" style="font-size:10px;">${s.qualification||''}</div></td><td>${s.department||''}</td><td><span class="badge badge-blue">${s.role||''}</span></td><td>${fmtMoney(s.salary)}</td><td><span class="badge badge-green">${s.status}</span></td><td style="display:flex;gap:4px;flex-wrap:wrap;"><button class="btn btn-sm" style="padding:4px 8px; font-size:11px; background:#0f172a;" onclick="downloadStaffCard(${s.id})"><i class="ri-id-card-line"></i> ID</button><button class="btn btn-sm btn-outline" style="padding:4px 8px;" onclick="downloadStaffProfile(${s.id})"><i class="ri-file-user-line"></i> Profile</button><button class="btn btn-sm btn-outline" style="padding:4px 8px;" onclick="openStaffModal(${s.id})">Edit</button><button class="btn btn-sm btn-danger" style="padding:4px 8px;" onclick="delStaff(${s.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
+  <div id="staffPreview" style="margin-top:16px;"></div>`;
+}
+function staffListHTML(staff){
+  const dateStr=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  const totalSal=staff.reduce((a,b)=>a+Number(b.salary||0),0);
+  return `<div id="staffPrint" class="rc-paper"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala • 0772 000000 • info@educontrol.ac.ug</p><p style="font-weight:700; letter-spacing:.14em; font-size:10px;">STAFF DIRECTORY • CONFIDENTIAL</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${staff.length} Staff</b><br>${dateStr}</div></div>
+  <div style="padding:10px 14px; display:flex; justify-content:space-between; background:#f8fafc; border-bottom:1.2px solid #0f172a; font-size:11px;"><span>Prepared by: <b>${user.name}</b> <span class="badge badge-blue">${user.role}</span></span><span>Total Salary: <b style="color:#1e40af;">${fmtMoney(totalSal)}</b></span></div>
+  <div style="padding:12px 14px;"><table class="rc-table"><thead><tr><th>#</th><th>Staff No</th><th>Name</th><th>Dept</th><th>Role</th><th>Phone</th><th style="text-align:right;">Salary</th><th>Status</th></tr></thead><tbody>${staff.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.staff_no}</b></td><td><b>${s.name}</b><div class="muted" style="font-size:9px;">${s.email||''}</div></td><td>${s.department||'-'}</td><td><span class="badge badge-blue">${s.role||'-'}</span></td><td>${s.phone||'-'}</td><td style="text-align:right;">${fmtMoney(s.salary)}</td><td style="text-align:center;"><span class="badge badge-green">${s.status}</span></td></tr>`).join('')}</tbody><tfoot><tr style="background:#0f172a; color:#fff;"><td colspan=6 style="text-align:right;"><b>TOTAL MONTHLY</b></td><td style="text-align:right;"><b>${fmtMoney(totalSal)}</b></td><td></td></tr></tfoot></table></div>
+  <div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Staff Records • ${dateStr} • Confidential</div></div>`;
+}
+function staffCardHTML(s){
+  return `<div id="staffCardPrint" style="width:86mm; height:54mm; border:1.5px solid #0f172a; border-radius:10px; overflow:hidden; background:#fff; font-family:Inter,sans-serif; display:flex;">
+    <div style="width:34mm; background:linear-gradient(180deg,#1e40af 0%,#3b82f6 100%); color:#fff; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:8px; text-align:center;">
+      <div style="width:48px; height:48px; border-radius:50%; background:#fff; color:#1e40af; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:800;">${s.name.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
+      <div style="margin-top:6px; font-size:7px; font-weight:700; letter-spacing:.08em;">EDUCONTROL</div><div style="font-size:6px; opacity:.9;">STAFF ID CARD</div>
+      <div style="margin-top:6px; background:rgba(255,255,255,.15); padding:2px 6px; border-radius:999px; font-size:6px; font-weight:700;">${s.staff_no}</div>
+    </div>
+    <div style="flex:1; padding:8px 10px; display:flex; flex-direction:column; justify-content:space-between;">
+      <div><div style="font-size:11px; font-weight:800; color:#0f172a; line-height:1.1;">${s.name}</div><div style="font-size:8px; color:#1e40af; font-weight:700; margin-top:2px;">${(s.role||'Staff').toUpperCase()} • ${s.department||''}</div><div style="margin-top:6px; font-size:7.5px; color:#334155; line-height:1.4;"><div><span class="muted">Phone:</span> <b>${s.phone||'-'}</b></div><div><span class="muted">Email:</span> ${s.email||'-'}</div><div><span class="muted">Qualif:</span> ${s.qualification||'-'}</div></div></div>
+      <div style="display:flex; justify-content:space-between; align-items:end; border-top:1px dashed #e2e8f0; padding-top:6px;"><div style="font-size:6px; color:#94a3b8;">Valid with stamp<br><b style="color:#0f172a;">${new Date().getFullYear()}-${new Date().getFullYear()+1}</b></div><div style="width:50px; border-top:1px solid #0f172a; text-align:center; font-size:6px; color:#64748b;">Head Teacher</div></div>
+    </div>
+  </div>`;
+}
+function staffProfileHTML(s){
+  const dateStr=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  return `<div id="staffProfilePrint" class="rc-paper"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Staff Profile • ${dateStr}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${s.staff_no}</b><br>${s.status}</div></div>
+  <div style="padding:16px; display:grid; grid-template-columns:90px 1fr; gap:16px; align-items:start;">
+    <div style="width:90px; height:90px; border-radius:14px; background:linear-gradient(135deg,#1e40af,#06b6d4); color:#fff; display:flex; align-items:center; justify-content:center; font-size:28px; font-weight:800;">${s.name.split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
+    <div><div style="font-size:18px; font-weight:800; color:#0f172a;">${s.name}</div><div style="font-size:12px; color:#1e40af; font-weight:700; margin-top:2px;">${s.role||'-'} • ${s.department||'-'}</div><div style="margin-top:8px; display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:11px;"><div><span class="muted">Staff No:</span> <b>${s.staff_no}</b></div><div><span class="muted">Gender:</span> <b>${s.gender||'-'}</b></div><div><span class="muted">Phone:</span> <b>${s.phone||'-'}</b></div><div><span class="muted">Email:</span> ${s.email||'-'}</div><div><span class="muted">Qualification:</span> ${s.qualification||'-'}</div><div><span class="muted">Hire Date:</span> ${s.hire_date||'-'}</div><div><span class="muted">Salary:</span> <b style="color:#1e40af;">${fmtMoney(s.salary)}</b></div><div><span class="muted">Status:</span> <span class="badge badge-green">${s.status}</span></div></div></div>
+  </div>
+  <div style="margin:0 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px; font-size:11px;"><b>Remarks:</b> <span class="muted">Dedicated staff member. Performance reviewed quarterly. Next appraisal: ${new Date(new Date().setMonth(new Date().getMonth()+3)).toLocaleDateString('en-GB',{month:'short',year:'numeric'})}</span></div>
+  <div class="rc-sign"><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Staff</b><br><span class="muted">Sign</span></div></div><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Approve</span></div></div><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>HR / Bursar</b><br><span class="muted">Sign</span></div></div></div>
+  <div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Staff Records • ${dateStr} • ${s.staff_no}</div></div>`;
+}
+async function downloadStaffPDF(){
+  const staff=await apiGet('/api/staff');
+  if(!staff.length) return alert('No staff');
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=staffListHTML(staff); document.body.appendChild(wrap);
+  const el=wrap.querySelector('#staffPrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST'); else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Staff_Directory_${today()}_A4.pdf`); document.body.removeChild(wrap);
+}
+async function downloadStaffProfile(id){
+  const s=await apiGet('/api/staff/'+id);
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=staffProfileHTML(s); document.body.appendChild(wrap);
+  const el=wrap.querySelector('#staffProfilePrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const imgW=190, imgH=canvas.height*imgW/canvas.width; pdf.addImage(imgData,'PNG',10,10,imgW,imgH,undefined,'FAST'); pdf.save(`${s.staff_no}_${s.name.replace(/[^A-Za-z0-9]/g,'_')}_Profile.pdf`); document.body.removeChild(wrap);
+}
+async function downloadStaffCard(id){
+  const s=await apiGet('/api/staff/'+id);
+  const wrap=document.createElement('div'); wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.style.background='#e2e8f0'; wrap.style.padding='20px'; wrap.innerHTML=staffCardHTML(s); document.body.appendChild(wrap);
+  const el=wrap.querySelector('#staffCardPrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); pdf.addImage(imgData,'PNG',62,20,86,54,undefined,'FAST'); pdf.save(`${s.staff_no}_${s.name.replace(/[^A-Za-z0-9]/g,'_')}_ID_Card.pdf`); document.body.removeChild(wrap);
+}
+async function downloadStaffCardsPDF(){
+  const staff=await apiGet('/api/staff');
+  if(!staff.length) return alert('No staff');
+  const {jsPDF}=window.jspdf; const pdf=new jsPDF('p','mm','a4');
+  for(let i=0;i<staff.length;i++){
+    const s=staff[i];
+    const wrap=document.createElement('div'); wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.style.background='#fff'; wrap.style.padding='10px'; wrap.innerHTML=staffCardHTML(s); document.body.appendChild(wrap);
+    const el=wrap.querySelector('#staffCardPrint');
+    const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'});
+    const imgData=canvas.toDataURL('image/png',1.0);
+    const x = (i%2===0)?10:110, y = Math.floor(i/2)*65 + 15;
+    if(i>0 && i%6===0){ pdf.addPage(); }
+    const pageIdx=i%6, px=(pageIdx%2===0)?10:110, py=Math.floor(pageIdx/2)*65+15;
+    // Use current page
+    if(i%6===0 && i>0) { /* already added */ }
+    pdf.addImage(imgData,'PNG',px,py,86,54,undefined,'FAST');
+    document.body.removeChild(wrap);
+    await new Promise(r=>setTimeout(r,150));
+  }
+  pdf.save(`Staff_ID_Cards_${today()}_A4.pdf`);
 }
 function openStaffModal(id){
   const load=id? apiGet('/api/staff/'+id) : Promise.resolve({});
@@ -719,15 +797,98 @@ async function saveStaff(id){
 }
 async function delStaff(id){ if(!confirm('Delete staff?')) return; await apiDel('/api/staff/'+id); renderStaff(); }
 
-// PAYROLL
+// PAYROLL — with A4 PDF (Payslip + Monthly Sheet)
 async function renderPayroll(){
   const pays=await apiGet('/api/payrolls');
+  const staff=await apiGet('/api/staff');
+  const smap={}; staff.forEach(s=> smap[s.id]=s.name + ' ('+s.staff_no+')');
+  const filteredMonth = document.getElementById('payMonth')?.value || new Date().toISOString().slice(0,7);
+  const monthPays = pays.filter(p=> !filteredMonth || p.month===filteredMonth);
+  const totalBasic = monthPays.reduce((a,b)=>a+Number(b.basic||0),0), totalAllow=monthPays.reduce((a,b)=>a+Number(b.allowances||0),0), totalDed=monthPays.reduce((a,b)=>a+Number(b.deductions||0),0), totalNet=monthPays.reduce((a,b)=>a+Number(b.net||0),0);
   $('#content').innerHTML=`
-  <div class="toolbar"><input id="payMonth" type="month" class="input" style="width:auto" value="${new Date().toISOString().slice(0,7)}"><button class="btn btn-sm" onclick="genPayroll()">Generate Payroll</button><button class="btn btn-sm btn-outline" onclick="renderPayroll()">Refresh</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Month</th><th>Staff</th><th>Basic</th><th>Allowances</th><th>Deductions</th><th>Net</th><th>Status</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${p.month}</td><td>${p.staff_id}</td><td>${fmtMoney(p.basic)}</td><td>${fmtMoney(p.allowances)}</td><td>${fmtMoney(p.deductions)}</td><td><b>${fmtMoney(p.net)}</b></td><td><span class="badge badge-green">${p.status}</span></td></tr>`).join('')}</tbody></table></div>
-  <div class="muted" style="margin-top:8px">Payroll auto-calculates: Allowances 10%, Deductions 5%. Net = Basic + Allowances - Deductions.</div>`;
+  <div class="toolbar" style="flex-wrap:wrap;">
+    <input id="payMonth" type="month" class="input" style="width:auto" value="${new Date().toISOString().slice(0,7)}" onchange="renderPayroll()">
+    <button class="btn btn-sm" onclick="genPayroll()"><i class="ri-add-line"></i> Generate Payroll</button>
+    <button class="btn btn-sm btn-outline" onclick="renderPayroll()"><i class="ri-refresh-line"></i> Refresh</button>
+    <button class="btn btn-sm btn-outline" onclick="downloadPayrollPDF()"><i class="ri-download-line"></i> Payroll PDF (A4)</button>
+    <button class="btn btn-sm btn-outline" onclick="downloadPayslipsPDF()"><i class="ri-file-paper-line"></i> Payslips PDF</button>
+  </div>
+  <div class="table-wrap"><table><thead><tr><th>Month</th><th>Staff</th><th>Basic</th><th>Allowances</th><th>Deductions</th><th>Net</th><th>Status</th><th>Receipt</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${p.month}</td><td>${smap[p.staff_id]||p.staff_id}</td><td>${fmtMoney(p.basic)}</td><td>${fmtMoney(p.allowances)}</td><td>${fmtMoney(p.deductions)}</td><td><b>${fmtMoney(p.net)}</b></td><td><span class="badge badge-green">${p.status}</span></td><td><button class="btn btn-sm" style="padding:4px 8px; font-size:11px; background:#0f172a;" onclick="downloadPayslip(${p.id})"><i class="ri-receipt-line"></i> Payslip</button></td></tr>`).join('')}</tbody></table></div>
+  <div class="muted" style="margin-top:8px">Payroll auto-calculates: Allowances 10%, Deductions 5%. Net = Basic + Allowances - Deductions. | Showing <b>${monthPays.length}</b> for ${filteredMonth} • Total Net <b>${fmtMoney(totalNet)}</b></div>
+  <div id="payrollPreview" style="margin-top:16px;"></div>`;
 }
 async function genPayroll(){ const month=$('#payMonth').value; if(!month) return alert('Select month'); await apiPost('/api/payroll/generate',{month}); renderPayroll(); }
+function payrollHTML(pays, staffMap, month){
+  const dateStr = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  const totalBasic = pays.reduce((a,b)=>a+Number(b.basic||0),0), totalAllow=pays.reduce((a,b)=>a+Number(b.allowances||0),0), totalDed=pays.reduce((a,b)=>a+Number(b.deductions||0),0), totalNet=pays.reduce((a,b)=>a+Number(b.net||0),0);
+  return `
+  <div id="payrollPrint" class="rc-paper">
+    <div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>P.O. Box 123, Kampala • 0772 000000 • info@educontrol.ac.ug</p><p style="font-weight:700; letter-spacing:.14em; font-size:10px;">PAYROLL SHEET • CONFIDENTIAL</p></div><div style="text-align:right; font-size:11px; background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px;"><b>MONTH</b><br>${month}<br><span style="font-size:10px;">${dateStr}</span></div></div>
+    <div style="padding:10px 14px; display:flex; justify-content:space-between; background:#f8fafc; border-bottom:1.2px solid #0f172a; font-size:11px;"><span>Prepared by: <b>${user.name}</b> <span class="badge badge-blue">${user.role}</span></span><span>Staff: <b>${pays.length}</b> • Total Net: <b style="color:#1e40af;">${fmtMoney(totalNet)}</b></span></div>
+    <div style="padding:12px 14px;">
+      <table class="rc-table">
+        <thead><tr><th>#</th><th>STAFF</th><th style="text-align:right;">BASIC</th><th style="text-align:right;">ALLOW (10%)</th><th style="text-align:right;">DED (5%)</th><th style="text-align:right;">NET PAY</th><th>STATUS</th></tr></thead>
+        <tbody>${pays.map((p,i)=>`<tr><td>${i+1}</td><td><b>${staffMap[p.staff_id]||p.staff_id}</b><div class="muted" style="font-size:10px;">${p.month}</div></td><td style="text-align:right;">${fmtMoney(p.basic)}</td><td style="text-align:right;">${fmtMoney(p.allowances)}</td><td style="text-align:right; color:var(--danger);">${fmtMoney(p.deductions)}</td><td style="text-align:right; font-weight:800;">${fmtMoney(p.net)}</td><td style="text-align:center;"><span class="badge badge-green">${p.status}</span></td></tr>`).join('') || `<tr><td colspan=7 style="text-align:center; padding:14px;" class="muted">No payroll for ${month}. Click Generate Payroll.</td></tr>`}</tbody>
+        ${pays.length ? `<tfoot><tr style="background:#0f172a; color:#fff;"><td colspan=2 style="text-align:right;"><b>TOTAL</b></td><td style="text-align:right;"><b>${fmtMoney(totalBasic)}</b></td><td style="text-align:right;"><b>${fmtMoney(totalAllow)}</b></td><td style="text-align:right;"><b>${fmtMoney(totalDed)}</b></td><td style="text-align:right;"><b>${fmtMoney(totalNet)}</b></td><td></td></tr></tfoot>` : ``}
+      </table>
+    </div>
+    <div style="padding:10px 14px; display:grid; grid-template-columns:repeat(3,1fr); gap:8px; font-size:11px;">
+      <div class="rc-kpi"><div class="muted">Total Basic</div><div class="v" style="font-size:13px;">${fmtMoney(totalBasic)}</div></div>
+      <div class="rc-kpi"><div class="muted">Total Net</div><div class="v" style="font-size:13px; color:var(--success);">${fmtMoney(totalNet)}</div></div>
+      <div class="rc-kpi"><div class="muted">Staff Paid</div><div class="v" style="font-size:13px;">${pays.length}</div></div>
+    </div>
+    <div class="rc-scale">Allowances 10% • Deductions 5% • Net = Basic + Allowances - Deductions • Confidential — for authorized personnel only</div>
+    <div class="rc-sign"><div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Bursar</b><br><span class="muted">Sign & Stamp</span></div></div><div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Approve</span></div></div><div style="text-align:center"><div style="width:150px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Auditor</b><br><span class="muted">Sign</span></div></div></div>
+    <div style="text-align:center; font-size:9px; color:#0f172a; font-weight:600; padding:7px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Payroll • ${month} • ${dateStr} • Confidential</div>
+  </div>`;
+}
+function payslipHTML(p, staffName){
+  const dateStr = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+  return `
+  <div id="payslipPrint" class="rc-paper" style="width:210mm; min-height:148mm; max-height:148mm; border:1.5px dashed #0f172a;">
+    <div class="rc-head" style="padding:12px 16px;"><div class="rc-crest" style="width:44px; height:44px; font-size:18px;">EC</div><div class="rc-title"><h2 style="font-size:16px;">EDUCONTROL ACADEMY</h2><p>Staff Payslip • Confidential</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:10px; text-align:right;"><b>${p.month}</b><br>${p.receipt_no||p.id}<br>${dateStr}</div></div>
+    <div style="padding:10px 14px; display:flex; justify-content:space-between; background:#f8fafc; border-bottom:1.2px solid #0f172a; font-size:11px;"><span>Staff: <b>${staffName}</b> (ID: ${p.staff_id})</span><span>Status: <span class="badge badge-green">${p.status}</span></span></div>
+    <div style="padding:12px 14px;">
+      <table class="rc-table"><thead><tr><th>EARNING / DEDUCTION</th><th style="width:38%; text-align:right;">AMOUNT (UGX)</th></tr></thead><tbody>
+        <tr><td>Basic Salary</td><td style="text-align:right;">${fmtMoney(p.basic)}</td></tr>
+        <tr><td>Allowances (10%)</td><td style="text-align:right; color:var(--success);">+ ${fmtMoney(p.allowances)}</td></tr>
+        <tr><td>Deductions (5%)</td><td style="text-align:right; color:var(--danger);">- ${fmtMoney(p.deductions)}</td></tr>
+        <tr style="background:#0f172a; color:#fff;"><td><b>NET PAY</b></td><td style="text-align:right;"><b>${fmtMoney(p.net)}</b></td></tr>
+      </tbody></table>
+      <div style="margin-top:8px; font-size:10px; color:#64748b;">Amount in words: <b><i>${fmtMoney(p.net)} Only</i></b></div>
+    </div>
+    <div style="display:flex; justify-content:space-between; padding:10px 14px; font-size:10px; border-top:1.2px dashed #0f172a; background:#f8fafc;"><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 3px;"></div><b>Bursar</b></div><div style="text-align:center"><div style="width:130px; border-top:1px solid #0f172a; margin:0 auto 3px;"></div><b>Staff</b></div><div style="font-size:9px; color:#94a3b8;">${p.month} • Valid with stamp</div></div>
+  </div>`;
+}
+async function downloadPayrollPDF(){
+  const month = document.getElementById('payMonth')?.value || new Date().toISOString().slice(0,7);
+  const paysAll = await apiGet('/api/payrolls');
+  const pays = paysAll.filter(p=> p.month===month);
+  if(!pays.length) return alert('No payroll for '+month+' — click Generate Payroll first');
+  const staff=await apiGet('/api/staff'); const smap={}; staff.forEach(s=> smap[s.id]=s.name+' ('+s.staff_no+')');
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=payrollHTML(pays,smap,month); document.body.appendChild(wrap);
+  const el=wrap.querySelector('#payrollPrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST'); else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Payroll_${month}_A4.pdf`); document.body.removeChild(wrap);
+}
+async function downloadPayslip(id){
+  const pays=await apiGet('/api/payrolls'); const p=pays.find(x=>x.id===id); if(!p) return alert('Not found');
+  const staff=await apiGet('/api/staff'); const s=staff.find(x=>x.id===p.staff_id); const name=s ? s.name+' ('+s.staff_no+')' : 'Staff #'+p.staff_id;
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=payslipHTML(p,name); document.body.appendChild(wrap);
+  const el=wrap.querySelector('#payslipPrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, margin=8, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width; const y=(297-imgH)/2;
+  pdf.addImage(imgData,'PNG',margin, Math.max(10,y), imgW, Math.min(imgH,140), undefined,'FAST'); pdf.save(`Payslip_${name.replace(/[^A-Za-z0-9]/g,'_')}_${p.month}.pdf`); document.body.removeChild(wrap);
+}
+async function downloadPayslipsPDF(){
+  const month=document.getElementById('payMonth')?.value || new Date().toISOString().slice(0,7);
+  const paysAll=await apiGet('/api/payrolls'); const pays=paysAll.filter(p=>p.month===month);
+  if(!pays.length) return alert('No payroll for '+month);
+  const staff=await apiGet('/api/staff'); const smap={}; staff.forEach(s=> smap[s.id]=s.name);
+  for(let i=0;i<Math.min(pays.length,8);i++){ await downloadPayslip(pays[i].id); await new Promise(r=>setTimeout(r,600)); }
+}
 
 // FEES - with Receipt PDF
 async function renderFees(){
