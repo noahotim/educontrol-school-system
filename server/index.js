@@ -9,10 +9,13 @@ const { sign, verify, verifyWithKey, role, BACKUP_KEY } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.disable('x-powered-by');
 
 app.use(cors());
 app.use(express.json({limit:'10mb'}));
 app.use(express.urlencoded({extended:true}));
+// Hide sensitive headers
+app.use((req,res,next)=>{ res.removeHeader('X-Powered-By'); next(); });
 const multer=require('multer');
 const uploadDir=path.join(__dirname,'../public/uploads');
 fs.mkdirSync(uploadDir,{recursive:true});
@@ -523,8 +526,11 @@ app.get('/api/sms/preview-bulk-results', verify, authorize('exams','sms','exams:
 });
 
 // Maintenance API — admin kill switch
-app.get('/api/maintenance', verify, (req,res)=>{
-  if(req.user.role!=='admin') return res.status(403).json({error:'Only admin can view maintenance status'});
+app.get('/api/maintenance', (req,res)=>{
+  const h=req.headers.authorization;
+  let tok=null; if(h) tok=h.replace('Bearer ','');
+  let u=null; if(tok){ try{ const {SECRET}=require('./auth'); const jwt=require('jsonwebtoken'); u=jwt.verify(tok, SECRET); }catch(e){} }
+  if(!u || u.role!=='admin') return res.status(404).send('Not found');
   const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
   res.json({enabled: !!(m&&m.enabled), message: m?m.message:'', enabled_at: m?m.enabled_at:'', enabled_by: m?m.enabled_by:'', enabled_until: m?m.enabled_until:null});
 });
