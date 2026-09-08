@@ -332,11 +332,13 @@ async function login(){
     if(j.mustChange || j.user.mustChange){
       token=j.token; user=j.user;
       localStorage.setItem('token',token); localStorage.setItem('user',JSON.stringify(user));
+      const lock=document.getElementById('suesLockout'); if(lock) lock.style.display='none';
       showChangePasswordModal(true);
       return;
     }
     token=j.token; user=j.user;
     localStorage.setItem('token',token); localStorage.setItem('user',JSON.stringify(user));
+    const lock2=document.getElementById('suesLockout'); if(lock2) lock2.style.display='none';
     showApp();
     setTimeout(checkMaintenance, 400);
   }catch(e){
