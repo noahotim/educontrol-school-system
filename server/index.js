@@ -51,10 +51,12 @@ function can(role, perm){
   if(perms.includes(base)) return true;
   return false;
 }
-function authorize(perm){
+function authorize(...perms){
   return (req,res,next)=>{
-    if(can(req.user.role, perm)) return next();
-    return res.status(403).json({error:`Forbidden — ${req.user.role} cannot access ${perm}. Allowed: ${(RBAC[req.user.role]||[]).join(', ')}`});
+    for(const perm of perms){
+      if(can(req.user.role, perm)) return next();
+    }
+    return res.status(403).json({error:`Forbidden — ${req.user.role} cannot access ${perms.join(' or ')}. Allowed: ${(RBAC[req.user.role]||[]).join(', ')}`});
   };
 }
 app.get('/api/roles', verify, (req,res)=> res.json({roles: RBAC, me: req.user.role}));
@@ -147,8 +149,8 @@ app.get('/api/attendance', verify, authorize('attendance:read'), (req,res)=>{
   res.json(db.prepare(q).all(...params));
 });
 
-// Results
-app.get('/api/results', verify, authorize('exams:read'), (req,res)=>{
+// Results — allow academic + AI tutor + dashboard for analytics
+app.get('/api/results', verify, authorize('exams:read','aitutor:read','dashboard:read','students:read'), (req,res)=>{
   const {exam_id, student_id} = req.query;
   let q='SELECT r.*, s.first_name, s.last_name, s.class FROM results r JOIN students s ON s.id=r.student_id WHERE 1=1';
   const p=[];
@@ -298,8 +300,53 @@ app.post('/api/sms/send', verify, authorize('sms'), (req,res)=>{
     for(const r of recipients) stmt.run(r.name||r.phone, r.phone, message, type||'General');
   });
   tx();
-  // In production integrate with Africa's Talking / Twilio
   res.json({sent: recipients.length, note:'SMS queued (mock - integrate SMS gateway in production)'});
+});
+// Bulk Results to Parents — easiest one-click
+app.post('/api/sms/send-bulk-results', verify, authorize('exams','sms'), (req,res)=>{
+  const {exam_id, customMessage} = req.body;
+  if(!exam_id) return res.status(400).json({error:'exam_id required'});
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(exam_id);
+  if(!exam) return res.status(404).json({error:'Exam not found'});
+  const results = db.prepare('SELECT r.*, s.first_name, s.last_name, s.class, s.parent_name, s.parent_phone, s.admission_no FROM results r JOIN students s ON s.id=r.student_id WHERE r.exam_id=? ORDER BY s.class, s.first_name').all(exam_id);
+  if(!results.length) return res.status(400).json({error:'No results for this exam yet'});
+  // Group by student
+  const byStudent={};
+  for(const r of results){
+    const key=r.student_id;
+    if(!byStudent[key]) byStudent[key]={student_id: r.student_id, admission_no: r.admission_no, name: r.first_name+' '+r.last_name, class: r.class, parent_name: r.parent_name, parent_phone: r.parent_phone, subjects:[]};
+    byStudent[key].subjects.push({subject:r.subject, marks:r.marks, grade:r.grade});
+  }
+  const students=Object.values(byStudent);
+  const stmt=db.prepare('INSERT INTO sms_logs (recipient, phone, message, type) VALUES (?,?,?,?)');
+  let sent=0;
+  const tx=db.transaction(()=>{
+    for(const st of students){
+      if(!st.parent_phone) continue;
+      const avg = (st.subjects.reduce((a,b)=>a+Number(b.marks),0)/st.subjects.length).toFixed(1);
+      const summary = st.subjects.map(s=> `${s.subject}:${s.marks}(${s.grade})`).join(', ');
+      const msg = customMessage ? customMessage.replace('{name}', st.name).replace('{class}', st.class).replace('{exam}', exam.name).replace('{results}', summary).replace('{avg}', avg)
+        : `Dear ${st.parent_name||'Parent'}, ${st.name} (${st.class}, ${st.admission_no}) results for ${exam.name} ${exam.term} ${exam.year}: ${summary}. Average: ${avg}%. - EduControl Academy`;
+      stmt.run(st.parent_name||st.name, st.parent_phone, msg, 'Results');
+      sent++;
+    }
+  });
+  tx();
+  res.json({sent, total: students.length, exam: exam.name, note: `Bulk results SMS queued for ${sent} parents (of ${students.length} students with results). Integrate Africa's Talking/Twilio for real delivery.`});
+});
+app.get('/api/sms/preview-bulk-results', verify, authorize('exams','sms','exams:read'), (req,res)=>{
+  const {exam_id} = req.query;
+  if(!exam_id) return res.status(400).json({error:'exam_id required'});
+  const exam = db.prepare('SELECT * FROM exams WHERE id=?').get(exam_id);
+  const results = db.prepare('SELECT r.*, s.first_name, s.last_name, s.class, s.parent_name, s.parent_phone, s.admission_no FROM results r JOIN students s ON s.id=r.student_id WHERE r.exam_id=? LIMIT 5').all(exam_id);
+  const byStudent={};
+  for(const r of results){
+    const k=r.student_id;
+    if(!byStudent[k]) byStudent[k]={name:r.first_name+' '+r.last_name, class:r.class, parent_phone:r.parent_phone, subjects:[]};
+    byStudent[k].subjects.push(`${r.subject}:${r.marks}(${r.grade})`);
+  }
+  const preview = Object.values(byStudent).map(s=> `Dear Parent, ${s.name} (${s.class}) results: ${s.subjects.join(', ')} - EduControl`).slice(0,3);
+  res.json({exam: exam?exam.name:'', count: Object.keys(byStudent).length, preview});
 });
 
 // Auto-seed on first run (Render free has empty DB)

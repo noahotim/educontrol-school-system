@@ -644,7 +644,58 @@ async function saveResults(examId){
 }
 async function viewResults(examId){
   const rows=await apiGet('/api/results?exam_id='+examId);
-  $('#resView').innerHTML=`<div class="card"><h4>Results (${rows.length})</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.first_name} ${r.last_name}</td><td>${r.class}</td><td>${r.subject}</td><td>${r.marks}</td><td><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div></div>`;
+  const examName = document.querySelector(`button[onclick="viewResults(${examId})"]`)?.closest('tr')?.querySelector('td')?.textContent || `Exam #${examId}`;
+  $('#resView').innerHTML=`
+  <div class="card" style="border:1.5px solid #1e40af;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+      <div><h4><i class="ri-file-list-3-line"></i> Results (${rows.length}) — ${examName}</h4><p class="muted" style="font-size:11px;">${rows.length} entries • Grouped by student</p></div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button class="btn btn-sm" style="background:#10b981;" onclick="previewBulkResults(${examId})"><i class="ri-eye-line"></i> Preview SMS</button>
+        <button class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="sendBulkResults(${examId})"><i class="ri-message-3-line"></i> Send to Parents (Bulk)</button>
+        <button class="btn btn-sm btn-outline" onclick="downloadResultsPDF(${examId})"><i class="ri-download-line"></i> PDF</button>
+      </div>
+    </div>
+    <div class="table-wrap" style="margin-top:10px; max-height:320px; overflow:auto;"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.first_name} ${r.last_name}</b><div class="muted" style="font-size:10px;">${r.admission_no||''}</div></td><td><span class="badge badge-blue">${r.class}</span></td><td>${r.subject}</td><td><b>${r.marks}</b></td><td><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div>
+    <div class="alert alert-info" style="margin-top:10px;"><b>Bulk SMS:</b> Sends personalized result SMS to each parent (one per student, even if multiple subjects). Uses parent phone from student record. <span class="muted">Example: "Dear Parent, Sarah (P5) results for Term I: Mathematics:78(D1), English:65(C3). Avg:71.5% - EduControl"</span></div>
+    <div id="bulkPreview" style="margin-top:10px;"></div>
+  </div>`;
+}
+async function previewBulkResults(examId){
+  try{
+    const data=await apiGet(`/api/sms/preview-bulk-results?exam_id=${examId}`);
+    $('#bulkPreview').innerHTML=`<div class="card" style="background:#f0fdf4; border:1px solid #bbf7d0;">
+      <h4><i class="ri-eye-line"></i> SMS Preview — ${data.count} students will be notified</h4>
+      <p class="muted" style="font-size:11px;">Exam: <b>${data.exam}</b> • This is how the SMS will look (first 3):</p>
+      <div style="margin-top:8px; display:grid; gap:6px;">${data.preview.map((msg,i)=>`<div style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:8px; font-size:11px;"><b>${i+1}.</b> ${msg}<br><span class="muted" style="font-size:10px;">→ Parent phone: •••• (from student record)</span></div>`).join('')}</div>
+      <div style="margin-top:8px; display:flex; gap:6px;"><button class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="sendBulkResults(${examId})"><i class="ri-send-plane-line"></i> Confirm Send to All ${data.count} Parents</button><button class="btn btn-sm btn-outline" onclick="$('#bulkPreview').innerHTML=''">Close</button></div>
+    </div>`;
+    document.getElementById('bulkPreview').scrollIntoView({behavior:'smooth'});
+  } catch(e){ alert('Preview failed: '+e.message); }
+}
+async function sendBulkResults(examId){
+  const customMsg = prompt('Custom message template (optional):\\nUse {name}, {class}, {exam}, {results}, {avg} as placeholders.\\nLeave blank for default.', '');
+  if(!confirm(`Send bulk results SMS for Exam #${examId} to ALL parents with results?\\nThis will queue SMS for each student.`)) return;
+  const btn=document.querySelector(`button[onclick="sendBulkResults(${examId})"]`);
+  const old=btn?btn.innerHTML:'';
+  if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Sending…';
+  try{
+    const res=await apiPost('/api/sms/send-bulk-results', {exam_id: examId, customMessage: customMsg || undefined});
+    alert(`✓ Bulk SMS queued!\\nSent: ${res.sent} parents\\nTotal: ${res.total} students\\nExam: ${res.exam}\\n\\n${res.note}\\n\\nCheck SMS & Comms → SMS Logs to see queued messages.`);
+    $('#bulkPreview').innerHTML=`<div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534;"><b>✓ Sent ${res.sent} SMS</b> for ${res.exam} — check <b>SMS & Comms</b> logs.</div>`;
+  } catch(e){ alert('Bulk send failed: '+e.message); }
+  finally{ if(btn) btn.innerHTML=old; }
+}
+async function downloadResultsPDF(examId){
+  const rows=await apiGet('/api/results?exam_id='+examId);
+  if(!rows.length) return alert('No results for this exam');
+  const examEl=document.querySelector(`button[onclick="viewResults(${examId})"]`)?.closest('tr')?.querySelector('td');
+  const examName=examEl?examEl.textContent.trim():'Exam #'+examId;
+  const html=`<div id="resultsPrint" class="rc-paper"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Examination Results • ${examName}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${rows.length} Entries</b><br>${new Date().toLocaleDateString('en-GB')}</div></div><div style="padding:12px 14px;"><table class="rc-table"><thead><tr><th>#</th><th>Student</th><th>Class</th><th>Subject</th><th style="text-align:center;">Marks</th><th style="text-align:center;">Grade</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${i+1}</td><td><b>${r.first_name} ${r.last_name}</b><div class="muted" style="font-size:9px;">${r.admission_no||''}</div></td><td>${r.class}</td><td>${r.subject}</td><td style="text-align:center;"><b>${r.marks}</b></td><td style="text-align:center;"><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div><div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl • ${examName} • ${new Date().toLocaleDateString('en-GB')}</div></div>`;
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=html; document.body.appendChild(wrap);
+  const el=wrap.querySelector('#resultsPrint'); const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST'); else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Results_${examName.replace(/[^A-Za-z0-9]/g,'_')}_A4.pdf`); document.body.removeChild(wrap);
 }
 
 // REPORT CARDS - Premium + PDF
@@ -850,12 +901,39 @@ async function askAI(){
   $('#aiAns').innerHTML=`<div class="card" style="background:#f0f9ff;border-color:#bfdbfe"><b>AI Tutor:</b><p style="margin-top:6px;white-space:pre-wrap">${r.answer}</p></div>`;
 }
 async function loadPerf(){
-  const rows=await apiGet('/api/results');
-  // avg by subject
-  const bySub={}; rows.forEach(r=>{ if(!bySub[r.subject]) bySub[r.subject]={sum:0,n:0}; bySub[r.subject].sum+=r.marks; bySub[r.subject].n++; });
-  const labels=Object.keys(bySub), data=labels.map(k=> (bySub[k].sum/bySub[k].n).toFixed(1));
-  $('#perfOut').innerHTML= labels.length? labels.map((k,i)=> `${k}: <b>${data[i]}%</b>`).join(' | ') : 'No results yet. Enter exams & results first.';
-  if(labels.length) new Chart($('#perfChart'),{type:'bar', data:{labels, datasets:[{label:'Avg %', data, backgroundColor:'#10b981'}]}, options:{plugins:{legend:{display:false}}}});
+  const btn=document.querySelector('button[onclick="loadPerf()"]');
+  const old=btn?btn.innerHTML:'';
+  if(btn) btn.innerHTML='<i class="ri-loader-4-line"></i> Loading…';
+  $('#perfOut').innerHTML='<span class="muted"><i class="ri-loader-4-line"></i> Fetching results for analytics…</span>';
+  try{
+    const rows=await apiGet('/api/results');
+    if(!rows || rows.length===0){
+      $('#perfOut').innerHTML='<div class="alert" style="background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>No results yet.</b> Enter exams & results in <b>Exams & Results</b> first, then click <b>Load Class Analytics</b> again.<br><span class="muted">Tip: Go to Exams → Create Exam → Enter Results (e.g., 5 students, Mathematics 75, 82...)</span></div>';
+      if(btn) btn.innerHTML=old;
+      return;
+    }
+    const bySub={}; rows.forEach(r=>{ if(!r.subject) return; if(!bySub[r.subject]) bySub[r.subject]={sum:0,n:0}; bySub[r.subject].sum+=Number(r.marks||0); bySub[r.subject].n++; });
+    const labels=Object.keys(bySub), data=labels.map(k=> (bySub[k].sum/bySub[k].n).toFixed(1));
+    const overall = labels.length ? (data.reduce((a,b)=>a+Number(b),0)/data.length).toFixed(1) : '0';
+    // Also compute top students and grade distribution for extras
+    const byStudent={}; rows.forEach(r=>{ const key=r.first_name+' '+r.last_name+' ('+r.class+')'; if(!byStudent[key]) byStudent[key]=[]; byStudent[key].push(Number(r.marks)); });
+    const studentAvgs=Object.entries(byStudent).map(([k,arr])=>({name:k, avg:(arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1)})).sort((a,b)=>b.avg-a.avg).slice(0,5);
+    $('#perfOut').innerHTML=`
+      <div style="display:grid; gap:8px;">
+        <div><b>Overall Average:</b> <span style="color:var(--success); font-weight:800;">${overall}%</span> • <span class="muted">${rows.length} results • ${labels.length} subjects</span></div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">${labels.map((k,i)=>`<span class="badge ${Number(data[i])>=60?'badge-green':Number(data[i])>=40?'badge-amber':'badge-red'}" style="font-size:11px; padding:4px 8px;">${k}: ${data[i]}%</span>`).join('')}</div>
+        ${studentAvgs.length?`<div style="margin-top:6px;"><b>Top 5 Students:</b><br><span class="muted" style="font-size:11px;">${studentAvgs.map(s=>`${s.name} <b>${s.avg}%</b>`).join(' | ')}</span></div>`:''}
+        <div style="margin-top:4px; font-size:11px; color:var(--muted);">Chart: Average score per subject (green = good). Hover for values.</div>
+      </div>`;
+    const ctx=document.getElementById('perfChart');
+    if(ctx){
+      // Destroy previous chart if exists
+      if(window._perfChart) try{ window._perfChart.destroy(); }catch(e){}
+      window._perfChart=new Chart(ctx,{type:'bar', data:{labels, datasets:[{label:'Avg %', data, backgroundColor: labels.map(v=> Number(v)>=60?'#10b981': Number(v)>=40?'#f59e0b':'#ef4444'), borderColor:'#0f172a', borderWidth:1}]}, options:{responsive:true, plugins:{legend:{display:false}, tooltip:{callbacks:{label: ctx=> ctx.parsed.y+'%'}}}, scales:{y:{beginAtZero:true, max:100, ticks:{callback:v=>v+'%'}}}}});
+    }
+  } catch(e){
+    $('#perfOut').innerHTML=`<div class="alert" style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b;"><b>Failed to load analytics:</b> ${e.message}<br><span class="muted" style="font-size:11px;">Your role <b>${user.role}</b> needs <b>exams:read</b> or <b>aitutor:read</b>. Current: ${(ROLES[user.role]||[]).join(', ')}</span><br><button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="loadPerf()">Retry</button></div>`;
+  } finally{ if(btn) btn.innerHTML=old; }
 }
 
 // STAFF — with ID Card + List PDF
