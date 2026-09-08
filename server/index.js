@@ -76,9 +76,9 @@ app.get('/api/users', verify, role('admin','headteacher'), (req,res)=> res.json(
 const RBAC = {
   admin: ['*'],
   headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff:read','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
-  teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','staff:read','events:read','transport:read'],
-  class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','staff:read','events:read','transport:read'],
-  subject_teacher: ['dashboard','students:read','exams:enter','aitutor:read','events:read'],
+  teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','events:read','transport:read'],
+  class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','events:read','transport:read'],
+  subject_teacher: ['dashboard','students:read','exams:read','exams:enter','aitutor:read','events:read'],
   bursar: ['dashboard','students:read','staff:read','fees','expenses','reports','payroll','procurement','inventory','events:read','sms'],
   nurse: ['dashboard','students:read','sickbay','events:read','aitutor:read'],
 };

@@ -191,8 +191,8 @@ function today(){ return new Date().toISOString().slice(0,10); }
 const ROLES = {
   admin: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff','payroll','fees','expenses','reports','procurement','inventory','sickbay','transport','events','sms','backup','roles'],
   headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
-  teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','staff:read','events:read','transport:read'],
-  class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','staff:read','events:read','transport:read'],
+  teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','events:read','transport:read'],
+  class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','events:read','transport:read'],
   subject_teacher: ['dashboard','students:read','exams:read','exams:enter','aitutor:read','events:read'],
   bursar: ['dashboard','students:read','staff:read','payroll','fees','expenses','reports','procurement','inventory','events:read','sms','aitutor:read'],
   nurse: ['dashboard','students:read','sickbay','events:read','aitutor:read']
@@ -2027,36 +2027,38 @@ function renderRoles(){
     {feature:'Exams & Results', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'❌', nurse:'❌'},
     {feature:'Report Cards + PDF', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'❌', nurse:'❌'},
     {feature:'AI Tutor', admin:'✅', headteacher:'✅', teacher:'✅', bursar:'View', nurse:'View'},
-    {feature:'Staff Records', admin:'CRUD', headteacher:'View', teacher:'View', bursar:'View', nurse:'❌'},
-    {feature:'Payroll / Salary', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌'},
-    {feature:'Fees & Payments', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌'},
-    {feature:'Expenses / Income', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌'},
-    {feature:'Financial Reports', admin:'✅', headteacher:'View', teacher:'❌', bursar:'✅', nurse:'❌'},
-    {feature:'Procurement', admin:'✅', headteacher:'✅', teacher:'View', bursar:'CRUD', nurse:'❌'},
-    {feature:'Stock & Inventory', admin:'✅', headteacher:'✅', teacher:'View', bursar:'CRUD', nurse:'❌'},
-    {feature:'Sickbay / Medical', admin:'✅', headteacher:'View', teacher:'❌', bursar:'❌', nurse:'CRUD'},
-    {feature:'Transport', admin:'✅', headteacher:'✅', teacher:'View', bursar:'❌', nurse:'❌'},
-    {feature:'Events', admin:'CRUD', headteacher:'CRUD', teacher:'View', bursar:'View', nurse:'View'},
-    {feature:'SMS & Comms', admin:'✅', headteacher:'✅', teacher:'❌', bursar:'✅', nurse:'❌'},
-    {feature:'Backup & Users', admin:'✅', headteacher:'View', teacher:'❌', bursar:'❌', nurse:'❌'},
+    {feature:'Staff Records', admin:'CRUD', headteacher:'View', teacher:'❌', bursar:'View', nurse:'❌', class_teacher:'❌', subject_teacher:'❌'},
+    {feature:'Payroll / Salary', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌', class_teacher:'❌', subject_teacher:'❌'},
+    {feature:'Fees & Payments', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌', class_teacher:'❌', subject_teacher:'❌'},
+    {feature:'Expenses / Income', admin:'✅', headteacher:'View', teacher:'❌', bursar:'CRUD', nurse:'❌', class_teacher:'❌', subject_teacher:'❌'},
+    {feature:'Financial Reports', admin:'✅', headteacher:'View', teacher:'❌', bursar:'✅', nurse:'❌', class_teacher:'❌', subject_teacher:'❌'},
+    {feature:'Procurement', admin:'✅', headteacher:'✅', teacher:'❌', bursar:'CRUD', nurse:'❌', class_teacher:'View', subject_teacher:'❌'},
+    {feature:'Stock & Inventory', admin:'✅', headteacher:'✅', teacher:'❌', bursar:'CRUD', nurse:'❌', class_teacher:'View', subject_teacher:'❌'},
+    {feature:'Sickbay / Medical', admin:'✅', headteacher:'View', teacher:'❌', bursar:'❌', nurse:'CRUD', class_teacher:'❌', subject_teacher:'❌'},
+    {feature:'Transport', admin:'✅', headteacher:'✅', teacher:'View', bursar:'❌', nurse:'❌', class_teacher:'View', subject_teacher:'❌'},
+    {feature:'Events', admin:'CRUD', headteacher:'CRUD', teacher:'View', bursar:'View', nurse:'View', class_teacher:'View', subject_teacher:'View'},
+    {feature:'SMS & Comms', admin:'✅', headteacher:'✅', teacher:'❌', bursar:'✅', nurse:'❌', class_teacher:'❌', subject_teacher:'❌'},
+    {feature:'Backup & Users', admin:'✅', headteacher:'View', teacher:'❌', bursar:'❌', nurse:'❌', class_teacher:'❌', subject_teacher:'❌'},
   ];
   $('#content').innerHTML=`
   <div class="card">
     <h4><i class="ri-shield-user-line"></i> Roles & Permissions - Who Can Access What</h4>
-    <p class="muted" style="margin-top:6px;">Enforced on both frontend (nav hidden) and backend (403 Forbidden). Your current role: <span class="badge badge-blue">${user.role}</span></p>
-    <div class="table-wrap" style="margin-top:12px;">
-      <table><thead><tr><th>Feature</th><th>Admin</th><th>Head Teacher</th><th>Teacher</th><th>Bursar</th><th>Nurse</th></tr></thead>
-      <tbody>${matrix.map(r=>`<tr><td><b>${r.feature}</b></td><td style="text-align:center">${r.admin}</td><td style="text-align:center">${r.headteacher}</td><td style="text-align:center">${r.teacher}</td><td style="text-align:center">${r.bursar}</td><td style="text-align:center">${r.nurse}</td></tr>`).join('')}</tbody></table>
+    <p class="muted" style="margin-top:6px;">Enforced on both frontend (nav hidden) and backend (403 Forbidden). Your current role: <span class="badge badge-blue">${user.role}</span> — 7 roles, Staff hidden for teachers.</p>
+    <div class="table-wrap" style="margin-top:12px; overflow:auto;">
+      <table><thead><tr><th>Feature</th><th>Admin</th><th>Head Teacher</th><th>Teacher</th><th>Class T.</th><th>Subject T.</th><th>Bursar</th><th>Nurse</th></tr></thead>
+      <tbody>${matrix.map(r=>`<tr><td><b>${r.feature}</b></td><td style="text-align:center">${r.admin}</td><td style="text-align:center">${r.headteacher}</td><td style="text-align:center">${r.teacher}</td><td style="text-align:center">${r.class_teacher||'❌'}</td><td style="text-align:center">${r.subject_teacher||'❌'}</td><td style="text-align:center">${r.bursar}</td><td style="text-align:center">${r.nurse}</td></tr>`).join('')}</tbody></table>
     </div>
     <div class="grid grid3" style="margin-top:14px;">
       <div class="card" style="background:#eff6ff; border-color:#bfdbfe;"><b>Admin</b><div class="muted" style="margin-top:4px; font-size:12px;">Full system owner. CRUD all modules, manage users, backup/restore, all finance & academic. <br><b>Demo:</b> admin / admin123</div></div>
       <div class="card" style="background:#f0fdf4; border-color:#bbf7d0;"><b>Head Teacher</b><div class="muted" style="margin-top:4px; font-size:12px;">Academic leader. Full academic + view finance + approve procurement. Cannot delete users/backup. <br><b>Create:</b> headteacher / 123456</div></div>
-      <div class="card" style="background:#fefce8; border-color:#fde68a;"><b>Teacher</b><div class="muted" style="margin-top:4px; font-size:12px;">Classroom. Students, attendance, exams, report cards, AI tutor. No finance, no payroll, no sickbay edit. <br><b>Demo:</b> teacher1 / teacher123</div></div>
+      <div class="card" style="background:#fefce8; border-color:#fde68a;"><b>Teacher</b><div class="muted" style="margin-top:4px; font-size:12px;">Classroom. Students, attendance, exams, report cards, AI tutor. <b>No Staff page</b> — privacy. No finance/sickbay. <br><b>Demo:</b> teacher1 / teacher123</div></div>
     </div>
-    <div class="grid grid2" style="margin-top:10px;">
+    <div class="grid grid3" style="margin-top:10px;">
+      <div class="card" style="background:#e0f2fe; border-color:#7dd3fc;"><b>Class Teacher</b><div class="muted" style="margin-top:4px; font-size:12px;">Promotes students, compiles results (one-click). View class attendance/exams. No finance/staff. <br><b>Demo:</b> classteacher / class123</div></div>
+      <div class="card" style="background:#f3e8ff; border-color:#d8b4fe;"><b>Subject Teacher</b><div class="muted" style="margin-top:4px; font-size:12px;">Enters marks only for assigned subject/class — auto-routed. No staff/finance. <br><b>Demo:</b> subjectteacher / subject123</div></div>
       <div class="card" style="background:#fef2f2; border-color:#fecaca;"><b>Bursar</b><div class="muted" style="margin-top:4px; font-size:12px;">Finance officer. Fees, payments, expenses, payroll, procurement, inventory, financial reports. No academic edit, no sickbay. <br><b>Demo:</b> bursar / bursar123</div></div>
-      <div class="card" style="background:#fdf2f8; border-color:#fbcfe8;"><b>Nurse</b><div class="muted" style="margin-top:4px; font-size:12px;">Medical. Sickbay visits, medicines, student medical records (view students). No finance, no exams. <br><b>Demo:</b> nurse / nurse123</div></div>
     </div>
+    <div class="card" style="background:#fdf2f8; border-color:#fbcfe8; margin-top:10px;"><b>Nurse</b><div class="muted" style="margin-top:4px; font-size:12px;">Medical. Sickbay visits, medicines, student medical records (view students). No finance, no exams. <br><b>Demo:</b> nurse / nurse123</div></div>
     <div class="alert alert-info" style="margin-top:14px;"><b>Security:</b> All APIs check <code>role</code> from JWT via <code>authorize('perm')</code> in <code>server/index.js:1</code>. Forbidden -> <code>403 Forbidden - bursar cannot access exams</code>. Frontend hides nav items via <code>canAccess()</code> - but backend is the source of truth.</div>
     <div style="display:flex; gap:8px; margin-top:10px;"><button class="btn btn-sm" onclick="navigate('backup')"><i class="ri-user-add-line"></i> Create User</button><button class="btn btn-sm btn-outline" onclick="navigator.clipboard.writeText(JSON.stringify(ROLES,null,2)); alert('Roles JSON copied')">Copy Roles JSON</button></div>
   </div>`;
