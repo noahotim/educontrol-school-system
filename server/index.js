@@ -5,7 +5,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const dayjs = require('dayjs');
 const db = require('./db');
-const { sign, verify } = require('./auth');
+const { sign, verify, verifyWithKey, BACKUP_KEY } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -250,8 +250,8 @@ function autoSeed(){
 }
 autoSeed();
 
-// Backup - handles WAL mode correctly
-app.get('/api/backup', verify, async (req,res)=>{
+// Backup - handles WAL mode correctly + permanent key (no expiry)
+app.get('/api/backup', verifyWithKey, async (req,res)=>{
   const src = path.join(__dirname,'../data/school.db');
   if(!fs.existsSync(src)) return res.status(404).json({error:'No DB file'});
   const tmp = path.join(__dirname,'../data/backup_tmp.db');
@@ -268,6 +268,13 @@ app.get('/api/backup', verify, async (req,res)=>{
 });
 app.post('/api/restore', verify, (req,res)=>{
   res.json({note:'Restore via uploading DB file to /data/school.db and restart server'});
+});
+app.get('/api/backup-permanent', (req,res)=>{
+  if(req.query.key !== BACKUP_KEY) return res.status(401).json({error:'Invalid permanent key. Use ?key='+BACKUP_KEY});
+  const src = path.join(__dirname,'../data/school.db');
+  if(!fs.existsSync(src)) return res.status(404).json({error:'No DB file'});
+  const tmp = path.join(__dirname,'../data/backup_tmp2.db');
+  try{ db.exec(`VACUUM INTO '${tmp.replace(/'/g,"''")}'`); return res.download(tmp, `backup_${dayjs().format('YYYY-MM-DD')}.db`, ()=>{ try{ fs.unlinkSync(tmp);}catch(e){} }); }catch(e){ return res.download(src, `backup_${dayjs().format('YYYY-MM-DD')}.db`); }
 });
 app.post('/api/seed', verify, (req,res)=>{
   try{ require('./seed'); res.json({ok:true, note:'Seeded demo data (50 students etc.)'}); }catch(e){ res.status(500).json({error:e.message}); }
