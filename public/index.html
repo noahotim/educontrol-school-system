@@ -685,8 +685,32 @@ async function saveExam(){ const body={name:$('#e_name').value, class:$('#e_clas
 async function delExam(id){ if(!confirm('Delete exam & results?')) return; await apiDel('/api/exams/'+id); renderExams(); }
 async function openResultModal(examId, examName){
   const subjects=await apiGet('/api/subjects');
-  const students=await apiGet('/api/students');
-  openModal(`<h3>Enter Results - ${examName}</h3><div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select><div class="muted" style="margin:8px 0">Enter marks (0-100) per student. Grade auto-calculated.</div><div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>Adm</th><th>Name</th><th>Class</th><th>Marks</th></tr></thead><tbody>${students.slice(0,30).map(s=>`<tr><td>${s.admission_no}</td><td>${s.first_name} ${s.last_name}</td><td>${s.class}</td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" style="padding:6px;width:80px"></td></tr>`).join('')}</tbody></table></div></div><div style="display:flex;gap:8px;margin-top:12px"><button class="btn btn-sm" onclick="saveResults(${examId})">Save Results</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  const exams=await apiGet('/api/exams');
+  const exam=exams.find(e=>e.id===examId);
+  const examClass=exam ? exam.class : '';
+  const allStudents=await apiGet('/api/students');
+  // Per class: filter to exam's class if exists, else show all
+  const students = examClass ? allStudents.filter(s=> s.class===examClass) : allStudents;
+  const displayStudents = students.slice(0,50);
+  const classInfo = examClass ? `Class <b>${examClass}</b> — ${students.length} pupils` : `All Classes — ${students.length} pupils (exam has no class)`;
+  openModal(`<h3>Enter Results — ${examName} <span class="badge badge-blue" style="margin-left:6px;">${examClass||'All'}</span></h3>
+    <div class="alert alert-info" style="margin-top:8px; font-size:11px;"><b>Per Class & Per Student:</b> ${classInfo} • Enter marks 0-100 per student. Grade auto-calculates.</div>
+    <div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0;"><span class="muted" style="font-size:11px;">${displayStudents.length} students shown • Scroll to see all</span><span class="badge badge-amber">${examClass?examClass:'All'}</span></div>
+    <div style="max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Marks (0-100)</th><th>Grade</th></tr></thead><tbody>${displayStudents.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}" data-adm="${s.admission_no}" style="padding:6px;width:85px; font-size:12px;" placeholder="—" oninput="this.nextElementSibling.textContent=scoreGrade(this.value||0).g"></td><td><span class="badge badge-green" style="min-width:28px; display:inline-block; text-align:center;">-</span></td></tr>`).join('')}</tbody></table></div>
+    <div class="muted" style="font-size:10px; margin-top:6px;">Tip: Leave blank to skip a student. Only filled marks will be saved.</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px; flex-wrap:wrap;"><button class="btn btn-sm" onclick="previewResultsEntry(${examId})"><i class="ri-eye-line"></i> Preview</button><button class="btn btn-sm" style="background:#1e40af;" onclick="saveResults(${examId})"><i class="ri-save-line"></i> Save Results</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>
+    <div id="entryPreview" style="margin-top:10px;"></div>`);
+}
+function previewResultsEntry(examId){
+  const entries=[...document.querySelectorAll('.rMark')].filter(e=> e.value!=='').map(e=> ({adm:e.dataset.adm, name:e.dataset.name, marks:parseFloat(e.value), grade:scoreGrade(e.value).g}));
+  if(!entries.length) return document.getElementById('entryPreview').innerHTML=`<div class="alert" style="background:#fefce8; border:1px solid #fde68a; color:#92400e;">No marks entered yet. Fill at least one.</div>`;
+  document.getElementById('entryPreview').innerHTML=`<div class="card" style="background:#f0fdf4; border:1px solid #bbf7d0; padding:10px;">
+    <h4 style="font-size:12px;"><i class="ri-eye-line"></i> Preview — ${entries.length} students will be saved</h4>
+    <div class="table-wrap" style="margin-top:8px; max-height:180px; overflow:auto;"><table><thead><tr><th>Adm</th><th>Student</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${entries.map(e=>`<tr><td>${e.adm}</td><td>${e.name}</td><td><b>${e.marks}</b></td><td><span class="badge ${e.marks>=50?'badge-green':'badge-red'}">${e.grade}</span></td></tr>`).join('')}</tbody></table></div>
+    <div class="muted" style="font-size:11px; margin-top:6px;">Subject: <b>${document.getElementById('r_sub')?.value||''}</b> • This is how it will be saved. Click <b>Save Results</b> to confirm.</div>
+  </div>`;
 }
 async function saveResults(examId){
   const subject=$('#r_sub').value;
@@ -705,13 +729,24 @@ async function viewResults(examId){
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
         <button class="btn btn-sm" style="background:#10b981;" onclick="previewBulkResults(${examId})"><i class="ri-eye-line"></i> Preview SMS</button>
         <button class="btn btn-sm" style="background:#f59e0b; color:#fff;" onclick="sendBulkResults(${examId})"><i class="ri-message-3-line"></i> Send to Parents (Bulk)</button>
+        <button class="btn btn-sm btn-outline" onclick="previewResultsPDF(${examId})"><i class="ri-eye-line"></i> Preview PDF</button>
         <button class="btn btn-sm btn-outline" onclick="downloadResultsPDF(${examId})"><i class="ri-download-line"></i> PDF</button>
       </div>
     </div>
     <div class="table-wrap" style="margin-top:10px; max-height:320px; overflow:auto;"><table><thead><tr><th>Student</th><th>Class</th><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${rows.map(r=>`<tr><td><b>${r.first_name} ${r.last_name}</b><div class="muted" style="font-size:10px;">${r.admission_no||''}</div></td><td><span class="badge badge-blue">${r.class}</span></td><td>${r.subject}</td><td><b>${r.marks}</b></td><td><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}</tbody></table></div>
     <div class="alert alert-info" style="margin-top:10px;"><b>Bulk SMS:</b> Sends personalized result SMS to each parent (one per student, even if multiple subjects). Uses parent phone from student record. <span class="muted">Example: "Dear Parent, Sarah (P5) results for Term I: Mathematics:78(D1), English:65(C3). Avg:71.5% - EduControl"</span></div>
     <div id="bulkPreview" style="margin-top:10px;"></div>
+    <div id="resultsPreview" style="margin-top:10px;"></div>
   </div>`;
+}
+async function previewResultsPDF(examId){
+  const rows=await apiGet('/api/results?exam_id='+examId);
+  if(!rows.length) return alert('No results for this exam — enter marks first');
+  const examEl=document.querySelector(`button[onclick="viewResults(${examId})"]`)?.closest('tr')?.querySelector('td');
+  const examName=examEl?examEl.textContent.trim():'Exam #'+examId;
+  const html=`<div id="resultsPrintPreview" class="rc-paper" style="border:1px solid #0f172a;"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Examination Results • ${examName}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${rows.length} Entries</b><br>${new Date().toLocaleDateString('en-GB')}</div></div><div style="padding:12px 14px;"><table class="rc-table"><thead><tr><th>#</th><th>Student</th><th>Class</th><th>Subject</th><th style="text-align:center;">Marks</th><th style="text-align:center;">Grade</th></tr></thead><tbody>${rows.slice(0,30).map((r,i)=>`<tr><td>${i+1}</td><td><b>${r.first_name} ${r.last_name}</b><div class="muted" style="font-size:9px;">${r.admission_no||''}</div></td><td>${r.class}</td><td>${r.subject}</td><td style="text-align:center;"><b>${r.marks}</b></td><td style="text-align:center;"><span class="badge ${r.marks>=50?'badge-green':'badge-red'}">${r.grade}</span></td></tr>`).join('')}${rows.length>30?`<tr><td colspan=6 style="text-align:center;" class="muted">+ ${rows.length-30} more rows in PDF</td></tr>`:``}</tbody></table></div><div style="text-align:center; font-size:9px; padding:8px; background:#f8fafc; border-top:1px solid #0f172a;">Preview — ${rows.length} rows • Click Download PDF for full A4</div></div>`;
+  document.getElementById('resultsPreview').innerHTML=`<div class="a4-wrap" style="flex-direction:column; align-items:center;">${html}<div class="no-print" style="display:flex; gap:8px; margin-top:10px;"><button class="btn btn-sm" onclick="downloadResultsPDF(${examId})"><i class="ri-download-line"></i> Download PDF (A4)</button><button class="btn btn-sm btn-outline" onclick="document.getElementById('resultsPreview').innerHTML=''">Close Preview</button></div></div>`;
+  document.getElementById('resultsPreview').scrollIntoView({behavior:'smooth'});
 }
 async function previewBulkResults(examId){
   try{
