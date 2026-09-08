@@ -48,8 +48,9 @@ function maintenanceGuard(req,res,next){
     if(m && m.enabled){
       const isMaintenanceGet = req.path==='/api/maintenance';
       const isMaintenanceStatus = req.path==='/api/maintenance/status';
+      const isVerify = req.path==='/verify' || req.path==='/api/verify-student';
       const isBackupKey = req.path==='/api/backup' && req.query.key;
-      if(isMaintenanceGet || isMaintenanceStatus || isBackupKey) return next();
+      if(isMaintenanceGet || isMaintenanceStatus || isVerify || isBackupKey) return next();
       // HARD: check login — only admin login allowed
       if(req.path==='/api/login'){
         const {username}=req.body||{};
@@ -309,6 +310,35 @@ app.put('/api/students/:id', verify, authorize('students'), (req,res)=>{
 app.delete('/api/students/:id', verify, authorize('students'), (req,res)=>{ db.prepare('DELETE FROM students WHERE id=?').run(req.params.id); res.json({ok:true}); });
 app.get('/api/students/:id', verify, authorize('students:read'), (req,res)=>{ const r=db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id); if(!r) return res.status(404).json({error:'Not found'}); res.json(r);});
 // Public verification — QR scans here to show whole profile (registration, class, performance, fees)
+app.get('/verify', (req,res)=>{
+  const adm=(req.query.adm||'').trim();
+  res.send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Verify Student — EduControl</title>
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.2.0/fonts/remixicon.css" rel="stylesheet"/>
+  <style>*{box-sizing:border-box;margin:0}body{font-family:Inter,system-ui,sans-serif;background:#f1f5f9;color:#0f172a;min-height:100vh;padding:16px} .wrap{max-width:560px;margin:0 auto} .hdr{background:linear-gradient(135deg,#1e40af,#06b6d4);color:#fff;border-radius:16px;padding:16px;display:flex;align-items:center;gap:12px;box-shadow:0 10px 30px rgba(0,0,0,.15)} .crest{width:44px;height:44px;border-radius:10px;background:#fff;color:#1e40af;display:flex;align-items:center;justify-content:center;font-weight:800} .card{background:#fff;border-radius:16px;padding:16px;margin-top:12px;box-shadow:0 10px 30px rgba(0,0,0,.08);border:1px solid #e2e8f0} .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-top:8px} .k{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.04em} .v{font-weight:700} .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700} .g{background:#dcfce7;color:#166534} .r{background:#fee2e2;color:#991b1b} .b{background:#dbeafe;color:#1e40af} .a{background:#fef3c7;color:#92400e} .muted{color:#64748b} .tbl{width:100%;border-collapse:collapse;margin-top:8px;font-size:11px} .tbl th{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:6px 6px;border-bottom:1px solid #e2e8f0} .tbl td{padding:7px 6px;border-bottom:1px solid #f1f5f9} .foot{text-align:center;color:#94a3b8;font-size:10px;margin-top:10px}</style>
+  </head><body><div class="wrap"><div class="hdr"><div class="crest">EC</div><div><div style="font-weight:800;letter-spacing:.04em">EDUCONTROL ACADEMY</div><div style="opacity:.9;font-size:11px">Student Verification • Scan Result</div></div><div id="hdrAdm" style="margin-left:auto;font-size:10px;opacity:.9"></div></div><div id="root" class="card" style="text-align:center;padding:28px"><i class="ri-loader-4-line" style="animation:spin 1s linear infinite;font-size:22px"></i><div class="muted" style="margin-top:6px">Loading verification…</div></div><div class="foot">This is a live verification from EduControl • QR encodes this page • 2026</div></div>
+  <script>
+  const adm=new URLSearchParams(location.search).get('adm')||'';
+  document.getElementById('hdrAdm').textContent=adm? 'Adm: '+adm : '';
+  async function load(){
+    const el=document.getElementById('root');
+    if(!adm){ el.innerHTML='<div style="color:#dc2626"><i class=ri-error-warning-line></i> No admission number in QR.</div>'; return; }
+    try{
+      const r=await fetch('/api/verify-student?adm='+encodeURIComponent(adm));
+      const j=await r.json();
+      if(!r.ok) throw new Error(j.error||'Not found');
+      const s=j.student, f=j.fees, p=j.performance;
+      const feesBadge=f.cleared?'<span class=badge g>Fully Cleared</span>':'<span class=badge r>Balance '+Number(f.balance).toLocaleString()+'</span>';
+      const perfRows=p.results.length? p.results.map(x=>'<tr><td>'+x.exam+' <span class=muted>'+(x.term||'')+'</span></td><td>'+x.subject+'</td><td style="text-align:center"><b>'+x.marks+'</b></td><td style="text-align:center"><span class=badge '+(x.marks>=50?'g':'r')+'>'+x.grade+'</span></td></tr>').join('') : '<tr><td colspan=4 style="text-align:center" class=muted>No exams yet</td></tr>';
+      el.innerHTML='<div style="display:flex;gap:12px;align-items:center;text-align:left"><div style="width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#1e40af,#06b6d4);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px">'+(s.first_name[0]||'')+(s.last_name[0]||'')+'</div><div><div style="font-weight:800;font-size:16px">'+s.first_name+' '+s.last_name+'</div><div style="color:#1e40af;font-weight:700;font-size:11px">'+s.admission_no+' • '+s.class+' • '+(s.gender||'')+' • '+(s.dob||'')+'</div><div style="margin-top:4px"><span class=badge '+(s.registration_status==='Active'?'g':'r')+'>'+s.registration_status+'</span> <span class=badge b>'+s.class+'</span></div></div><div style="margin-left:auto;text-align:right;font-size:10px" class=muted>Parent<br><b style="color:#0f172a">'+(s.parent_name||'-')+'</b><br>'+(s.parent_phone||'-')+'</div></div>'+
+        '<div class=row><div><div class=k>Admission Date</div><div class=v>'+ (s.admission_date||'-') +'</div></div><div><div class=k>Address</div><div class=v>'+ (s.address||'-') +'</div></div></div>'+
+        '<div style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px"><div style="font-weight:800;font-size:12px"><i class=ri-money-dollar-circle-line></i> Fees</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:6px;font-size:11px"><div><div class=k>Total Due</div><div class=v>'+Number(f.totalDue).toLocaleString()+'</div></div><div><div class=k>Total Paid</div><div class=v style="color:#166534">'+Number(f.totalPaid).toLocaleString()+'</div></div><div><div class=k>Balance</div><div class=v style="color:'+(f.cleared?'#166534':'#dc2626')+'">'+Number(f.balance).toLocaleString()+'</div></div></div><div style="margin-top:8px">'+feesBadge+' <span class=muted style="font-size:11px">'+f.status+'</span></div></div>'+
+        '<div style="margin-top:10px"><div style="font-weight:800;font-size:12px"><i class=ri-bar-chart-line></i> Performance <span class=muted style="font-weight:400">• '+p.count+' exams • Avg '+(p.average||'-')+' • Best '+(p.best||'-')+'</span></div><table class=tbl><thead><tr><th>Exam</th><th>Subject</th><th style="text-align:center">Marks</th><th style="text-align:center">Grade</th></tr></thead><tbody>'+perfRows+'</tbody></table></div>'+
+        '<div style="margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:8px;text-align:center;font-size:11px;color:#166534"><i class=ri-qr-code-line></i> QR verified live from EduControl • Scan again anytime for updated fees/performance</div>';
+    }catch(e){ el.innerHTML='<div style="color:#dc2626"><i class=ri-error-warning-line></i> '+e.message+'</div><div class=muted style="font-size:11px;margin-top:6px">Check admission number in QR.</div>'; }
+  }
+  load();
+  </script><style>@keyframes spin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}</style></body></html>`);
+});
 app.get('/api/verify-student', (req,res)=>{
   const adm=(req.query.adm||req.query.admission_no||'').trim();
   if(!adm) return res.status(400).json({error:'adm required'});

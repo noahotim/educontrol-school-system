@@ -690,8 +690,8 @@ async function renderStudents(){
   <div id="studentCardPreview" style="margin-top:16px;"></div>`;
 }
 function studentCardHTML(s){
-  // QR now encodes full profile verify URL: scan shows registration, performance, class, fees balance
-  const verifyUrl = `https://educontrol-gif2.onrender.com/api/verify-student?adm=${s.admission_no}`;
+  // QR now encodes verification card URL (well-designed): scan opens /verify card with Reg/Perf/Fees
+  const verifyUrl = `https://educontrol-gif2.onrender.com/verify?adm=${s.admission_no}`;
   const qrData = encodeURIComponent(verifyUrl);
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${qrData}`;
   return `<div id="studentCardPrint" style="width:86mm; height:54mm; border:1.5px solid #0f172a; border-radius:10px; overflow:hidden; background:#fff; font-family:Inter,sans-serif; display:flex;">
@@ -709,7 +709,7 @@ function studentCardHTML(s){
   </div>`;
 }
 function studentProfileHTML(s){
-  const verifyUrl = `https://educontrol-gif2.onrender.com/api/verify-student?adm=${s.admission_no}`;
+  const verifyUrl = `https://educontrol-gif2.onrender.com/verify?adm=${s.admission_no}`;
   const qrData = encodeURIComponent(verifyUrl);
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${qrData}`;
   return `<div id="studentProfilePrint" class="rc-paper"><div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Student Profile • ${s.admission_no}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${s.class}</b><br>${s.status}</div></div>
@@ -738,7 +738,7 @@ async function previewStudentCard(id){
       <div><b>Registration:</b> <span class="badge badge-green">${verify?verify.student.registration_status:s.status}</span> • Class <b>${s.class}</b> • ${s.gender||''} • DOB ${s.dob||'-'}</div>
       <div style="margin-top:4px;"><b>Fees:</b> ${feesTxt} <span class="muted" style="margin-left:6px;">Due ${verify?verify.fees.totalDue.toLocaleString():'-'} • Paid ${verify?verify.fees.totalPaid.toLocaleString():'-'}</span></div>
       ${perfTxt}
-      <div class="muted" style="margin-top:4px; font-size:10px;">QR encodes <code>api/verify-student?adm=${s.admission_no}</code> — scan to see this full profile live (Reg • Class • Performance • Fees).</div>
+      <div class="muted" style="margin-top:4px; font-size:10px;">QR encodes <code>verify?adm=${s.admission_no}</code> — scan opens a <b>well-designed card</b> (Reg • Class • Performance • Fees). Live verification.</div>
     </div>
     <div style="background:#e2e8f0; padding:16px; border-radius:10px; display:flex; justify-content:center; margin-top:10px;">${studentCardHTML(s)}</div>
     <div style="display:flex; gap:8px; margin-top:12px; justify-content:center;">
