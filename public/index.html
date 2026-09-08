@@ -100,6 +100,26 @@ label{font-size:12px;font-weight:600;color:var(--muted);display:block;margin-bot
 }
 @media screen and (max-width:850px){ .rc-paper{ width:100%; min-height:auto; } .rc-meta{ grid-template-columns:repeat(2,1fr); } .rc-summary{ grid-template-columns:repeat(2,1fr); } }
 </style>
+<style id="pdf-fix">
+/* FIX: Thin 10px + no overlap — overrides previous */
+.rc-paper{ font-size:10px !important; line-height:1.35 !important; word-wrap:break-word !important; overflow-wrap:break-word !important; }
+.rc-paper *{ word-wrap:break-word !important; overflow-wrap:break-word !important; white-space:normal !important; }
+.rc-head{ padding:12px 14px !important; }
+.rc-crest{ width:48px !important; height:48px !important; font-size:20px !important; }
+.rc-title h2{ font-size:15px !important; }
+.rc-title p{ font-size:9px !important; }
+.rc-meta{ font-size:9.5px !important; padding:8px 10px !important; gap:6px !important; }
+.rc-table{ table-layout:fixed !important; }
+.rc-table th{ font-size:8.5px !important; padding:5px 6px !important; }
+.rc-table td{ font-size:9.5px !important; padding:5px 6px !important; white-space:normal !important; word-break:break-word !important; }
+.rc-summary{ gap:7px !important; padding:10px 12px !important; }
+.rc-kpi{ padding:7px 4px !important; }
+.rc-kpi .v{ font-size:14px !important; }
+.rc-kpi .muted{ font-size:8.5px !important; }
+.rc-scale{ font-size:8px !important; padding:6px 10px !important; }
+.rc-sign{ font-size:9.5px !important; padding:12px !important; gap:8px !important; }
+.rc-watermark::after{ font-size:44px !important; color:rgba(30,64,175,.035) !important; }
+</style>
 </head>
 <body>
 
@@ -402,19 +422,91 @@ async function saveStudent(id){
 async function delStudent(id){ if(!confirm('Delete student?')) return; await apiDel('/api/students/'+id); renderStudents(); }
 function exportStudentsCSV(){ window.open('/api/students', '_blank'); alert('Use browser print or copy. For full CSV, backend supports CSV export via API extension.'); }
 
-// ATTENDANCE
+// ATTENDANCE — with A4 PDFs (Per Class + General)
 async function renderAttendance(){
   const classes=await apiGet('/api/classes');
   $('#content').innerHTML=`
-  <div class="toolbar">
+  <div class="toolbar" style="flex-wrap:wrap;">
     <input id="attDate" type="date" class="input" style="width:auto" value="${today()}">
     <select id="attClass" class="input" style="width:auto"><option value="">All Classes</option>${classes.map(c=>`<option>${c.name}</option>`).join('')}</select>
     <button class="btn btn-sm btn-outline" onclick="loadAttendance()">Load</button>
     <button class="btn btn-sm" onclick="saveAttendance()">Save Attendance</button>
+    <button class="btn btn-sm btn-outline" onclick="downloadAttendancePDF()"><i class="ri-download-line"></i> PDF (Class)</button>
+    <button class="btn btn-sm btn-outline" onclick="downloadAttendanceGeneralPDF()"><i class="ri-file-list-line"></i> PDF (All)</button>
   </div>
   <div id="attWrap" class="table-wrap"><div class="muted" style="padding:20px">Select date & class and click Load</div></div>
+  <div id="attPreview" style="margin-top:12px;"></div>
   <div style="margin-top:12px" class="card"><h4>Attendance Log</h4><div id="attLog" class="muted">Loading...</div></div>`;
   loadAttendanceLog();
+}
+function attendancePDFHTML(date, cls, rows){
+  const present = rows.filter(r=>r.status==='Present').length, absent=rows.filter(r=>r.status==='Absent').length, late=rows.filter(r=>r.status==='Late').length, sick=rows.filter(r=>r.status==='Sick').length;
+  const total=rows.length;
+  const title = cls ? `Class ${cls}` : 'All Classes';
+  return `<div id="attendancePrint" class="rc-paper">
+    <div class="rc-head"><div class="rc-crest">EC</div><div class="rc-title"><h2>EDUCONTROL ACADEMY</h2><p>Daily Attendance Register • ${date}</p><p style="font-weight:700; letter-spacing:.12em; font-size:10px;">${title.toUpperCase()}</p></div><div style="background:rgba(255,255,255,.15); padding:6px 8px; border-radius:8px; font-size:11px; text-align:right;"><b>${date}</b><br>${title}<br><span style="font-size:10px;">${total} pupils</span></div></div>
+    <div style="padding:10px 14px; display:flex; justify-content:space-between; background:#f8fafc; border-bottom:1px solid #0f172a; font-size:11px;"><span>Date: <b>${date}</b> • Class: <b>${cls||'All'}</b> • Taken by: <b>${user.name}</b></span><span>Present: <b style="color:var(--success)">${present}</b> | Absent: <b style="color:var(--danger)">${absent}</b> | Late: <b>${late}</b> | Sick: <b>${sick}</b></span></div>
+    <div style="padding:12px 14px;">
+      <table class="rc-table">
+        <thead><tr><th style="width:28px">#</th><th style="width:22%">Adm No</th><th>Student Name</th><th style="width:18%">Class</th><th style="width:16%">Status</th><th style="width:12%">Init</th></tr></thead>
+        <tbody>${rows.length? rows.map((r,i)=>`<tr><td>${i+1}</td><td><b>${r.admission_no}</b></td><td><b>${r.first_name} ${r.last_name}</b></td><td><span class="badge badge-blue">${r.class||cls||'-'}</span></td><td style="text-align:center;"><span class="badge ${r.status==='Present'?'badge-green':r.status==='Absent'?'badge-red':r.status==='Late'?'badge-amber':'badge-blue'}">${r.status}</span></td><td style="text-align:center; color:#94a3b8;">—</td></tr>`).join('') : `<tr><td colspan=6 style="text-align:center; padding:18px;" class="muted">No students found for this class/date. Load a class and mark attendance first.</td></tr>`}</tbody>
+        ${rows.length? `<tfoot><tr style="background:#f0fdf4; font-weight:700;"><td colspan=4 style="text-align:right">TOTAL PRESENT</td><td style="text-align:center; color:var(--success);">${present} / ${total} (${total?Math.round(present/total*100):0}%)</td><td></td></tr></tfoot>`:``}
+      </table>
+    </div>
+    <div style="padding:10px 14px; display:grid; grid-template-columns:repeat(4,1fr); gap:7px;">
+      <div class="rc-kpi"><div class="muted">Total</div><div class="v">${total}</div></div>
+      <div class="rc-kpi"><div class="muted">Present</div><div class="v" style="color:var(--success)">${present}</div></div>
+      <div class="rc-kpi"><div class="muted">Absent</div><div class="v" style="color:var(--danger)">${absent}</div></div>
+      <div class="rc-kpi"><div class="muted">Rate</div><div class="v">${total?Math.round(present/total*100):0}%</div></div>
+    </div>
+    <div class="rc-sign"><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Class Teacher</b><br><span class="muted">Sign</span></div></div><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Head Teacher</b><br><span class="muted">Sign & Stamp</span></div></div><div style="text-align:center"><div style="width:140px; border-top:1px solid #0f172a; margin:0 auto 4px;"></div><div><b>Date</b><br><span class="muted">${date}</span></div></div></div>
+    <div style="text-align:center; font-size:8px; padding:7px; background:#f8fafc; border-top:1px solid #0f172a;">EduControl Attendance • ${date} • ${title} • Generated ${new Date().toLocaleDateString('en-GB')}</div>
+  </div>`;
+}
+async function downloadAttendancePDF(){
+  const date=document.getElementById('attDate')?.value || today();
+  const cls=document.getElementById('attClass')?.value || '';
+  // Use currently loaded table or fetch fresh
+  let rows=[];
+  const selRows=document.querySelectorAll('#attWrap table tbody tr');
+  if(selRows.length && selRows[0].querySelector('td')){
+    // Try to build from DOM selects
+    const sels=document.querySelectorAll('.attSel');
+    if(sels.length){
+      const students=await apiGet('/api/students'+(cls?`?q=${encodeURIComponent(cls)}`:''));
+      const filtered=cls?students.filter(s=>s.class===cls):students;
+      rows=filtered.map(s=>{
+        const sel=document.querySelector(`.attSel[data-id="${s.id}"]`);
+        return {admission_no:s.admission_no, first_name:s.first_name, last_name:s.last_name, class:s.class, status:sel?sel.value:'Present'};
+      });
+    }
+  }
+  if(!rows.length){
+    // Fetch from saved attendance log for this date/class
+    const logs=await apiGet('/api/attendance');
+    rows=logs.filter(l=> l.date===date && (!cls || l.class===cls)).map(l=>({admission_no:l.admission_no, first_name:l.first_name, last_name:l.last_name, class:l.class, status:l.status}));
+    if(!rows.length){
+      // Fallback: all students for class
+      const students=await apiGet('/api/students'+(cls?`?q=${encodeURIComponent(cls)}`:''));
+      const filtered=cls?students.filter(s=>s.class===cls):students.slice(0,40);
+      rows=filtered.map(s=>({admission_no:s.admission_no, first_name:s.first_name, last_name:s.last_name, class:s.class, status:'Present'}));
+    }
+  }
+  if(!rows.length) return alert('No students for PDF — select a class and load');
+  const html=attendancePDFHTML(date, cls, rows);
+  const wrap=document.createElement('div'); wrap.className='a4-wrap'; wrap.style.position='fixed'; wrap.style.left='-9999px'; wrap.innerHTML=html; document.body.appendChild(wrap);
+  const el=wrap.querySelector('#attendancePrint');
+  const {jsPDF}=window.jspdf; const canvas=await html2canvas(el,{scale:3, useCORS:true, backgroundColor:'#ffffff'}); const imgData=canvas.toDataURL('image/png',1.0);
+  const pdf=new jsPDF('p','mm','a4'); const pageW=210, pageH=297, margin=5, imgW=pageW-margin*2, imgH=canvas.height*imgW/canvas.width;
+  if(imgH<=pageH-margin*2) pdf.addImage(imgData,'PNG',margin,margin,imgW,imgH,undefined,'FAST'); else { let y=margin, rem=imgH, pos=0; while(rem>0){ pdf.addImage(imgData,'PNG',margin,y-pos,imgW,imgH,undefined,'FAST'); rem-=pageH; if(rem>0){ pdf.addPage(); pos+=pageH; } else break; } }
+  pdf.save(`Attendance_${cls||'All'}_${date}_A4.pdf`); document.body.removeChild(wrap);
+  // Also show preview
+  document.getElementById('attPreview').innerHTML=`<div class="a4-wrap" style="flex-direction:column; align-items:center;">${html}<div class="no-print" style="display:flex; gap:8px; margin-top:10px;"><button class="btn btn-sm btn-outline" onclick="document.getElementById('attPreview').innerHTML=''">Close Preview</button></div></div>`;
+}
+async function downloadAttendanceGeneralPDF(){
+  const date=document.getElementById('attDate')?.value || today();
+  document.getElementById('attClass').value='';
+  await downloadAttendancePDF();
 }
 async function loadAttendance(){
   const date=$('#attDate').value, cls=$('#attClass').value;
