@@ -689,19 +689,84 @@ async function openResultModal(examId, examName){
   const exam=exams.find(e=>e.id===examId);
   const examClass=exam ? exam.class : '';
   const allStudents=await apiGet('/api/students');
+  const classes=await apiGet('/api/classes').catch(()=>[]);
   // Per class: filter to exam's class if exists, else show all
-  const students = examClass ? allStudents.filter(s=> s.class===examClass) : allStudents;
-  const displayStudents = students.slice(0,50);
-  const classInfo = examClass ? `Class <b>${examClass}</b> — ${students.length} pupils` : `All Classes — ${students.length} pupils (exam has no class)`;
+  const bulkStudents = examClass ? allStudents.filter(s=> s.class===examClass) : allStudents;
+  const displayBulk = bulkStudents.slice(0,50);
+  const classInfo = examClass ? `Class <b>${examClass}</b> — ${bulkStudents.length} pupils` : `All Classes — ${bulkStudents.length} pupils (exam has no class)`;
   openModal(`<h3>Enter Results — ${examName} <span class="badge badge-blue" style="margin-left:6px;">${examClass||'All'}</span></h3>
-    <div class="alert alert-info" style="margin-top:8px; font-size:11px;"><b>Per Class & Per Student:</b> ${classInfo} • Enter marks 0-100 per student. Grade auto-calculates.</div>
-    <div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select>
-    <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0;"><span class="muted" style="font-size:11px;">${displayStudents.length} students shown • Scroll to see all</span><span class="badge badge-amber">${examClass?examClass:'All'}</span></div>
-    <div style="max-height:380px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Marks (0-100)</th><th>Grade</th></tr></thead><tbody>${displayStudents.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}" data-adm="${s.admission_no}" style="padding:6px;width:85px; font-size:12px;" placeholder="—" oninput="this.nextElementSibling.textContent=scoreGrade(this.value||0).g"></td><td><span class="badge badge-green" style="min-width:28px; display:inline-block; text-align:center;">-</span></td></tr>`).join('')}</tbody></table></div>
-    <div class="muted" style="font-size:10px; margin-top:6px;">Tip: Leave blank to skip a student. Only filled marks will be saved.</div>
+    <div class="tabs" style="margin-top:10px;">
+      <button class="tab active" id="tabBulk" onclick="switchMarkMode('bulk',${examId})"><i class="ri-team-line"></i> Bulk by Class</button>
+      <button class="tab" id="tabSingle" onclick="switchMarkMode('single',${examId})"><i class="ri-user-3-line"></i> Per Student</button>
     </div>
-    <div style="display:flex;gap:8px;margin-top:12px; flex-wrap:wrap;"><button class="btn btn-sm" onclick="previewResultsEntry(${examId})"><i class="ri-eye-line"></i> Preview</button><button class="btn btn-sm" style="background:#1e40af;" onclick="saveResults(${examId})"><i class="ri-save-line"></i> Save Results</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>
+    <div id="bulkMode">
+      <div class="alert alert-info" style="margin-top:8px; font-size:11px;"><b>Bulk Mode — Per Class:</b> ${classInfo} • Select subject, enter marks 0-100 for all pupils in class. Grade auto.</div>
+      <div style="margin-top:10px"><label>Subject</label><select id="r_sub" class="input">${subjects.map(s=>`<option>${s.name}</option>`).join('')}</select>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0;"><span class="muted" style="font-size:11px;">${displayBulk.length} students shown • Scroll to see all</span><span class="badge badge-amber">${examClass?examClass:'All'}</span></div>
+      <div style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px"><table><thead><tr><th>#</th><th>Adm No</th><th>Student</th><th>Class</th><th>Marks (0-100)</th><th>Grade</th></tr></thead><tbody>${displayBulk.map((s,i)=>`<tr><td>${i+1}</td><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td><input type="number" min="0" max="100" class="input rMark" data-id="${s.id}" data-name="${s.first_name} ${s.last_name}" data-adm="${s.admission_no}" style="padding:6px;width:85px; font-size:12px;" placeholder="—" oninput="this.nextElementSibling.textContent=scoreGrade(this.value||0).g"></td><td><span class="badge badge-green" style="min-width:28px; display:inline-block; text-align:center;">-</span></td></tr>`).join('')}</tbody></table></div>
+      <div class="muted" style="font-size:10px; margin-top:6px;">Tip: Leave blank to skip. Only filled will be saved.</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px; flex-wrap:wrap;"><button class="btn btn-sm" onclick="previewResultsEntry(${examId})"><i class="ri-eye-line"></i> Preview</button><button class="btn btn-sm" style="background:#1e40af;" onclick="saveResults(${examId})"><i class="ri-save-line"></i> Save Bulk</button></div>
+    </div>
+    <div id="singleMode" style="display:none;">
+      <div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; padding:10px; margin-top:8px; font-size:11px;"><b>Per Student Mode:</b> Select Class → Student → enter marks for <b>all subjects</b> for that one pupil.</div>
+      <div class="form-grid" style="margin-top:10px;">
+        <div><label>Class</label><select id="singleClass" class="input" onchange="loadSingleStudents(${examId})"><option value="">Select Class</option>${classes.map(c=>`<option value="${c.name}" ${c.name===examClass?'selected':''}>${c.name}</option>`).join('')}</select></div>
+        <div><label>Student</label><select id="singleStudent" class="input" onchange="loadSingleSubjects()"><option value="">Select Student</option></select></div>
+      </div>
+      <div id="singleSubjectsWrap" style="margin-top:10px; max-height:320px; overflow:auto; border:1px solid var(--border); border-radius:10px; padding:8px;">
+        <div class="muted" style="text-align:center; padding:20px;">Select class & student to load subjects</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px; flex-wrap:wrap;"><button class="btn btn-sm" onclick="previewSingleEntry()"><i class="ri-eye-line"></i> Preview</button><button class="btn btn-sm" style="background:#10b981;" onclick="saveSingleResults(${examId})"><i class="ri-save-line"></i> Save for Student</button></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;"><button class="btn btn-sm btn-outline" onclick="closeModal()">Close</button></div>
     <div id="entryPreview" style="margin-top:10px;"></div>`);
+  // Pre-load single mode if exam has class
+  if(examClass) setTimeout(()=> loadSingleStudents(examId), 300);
+}
+function switchMarkMode(mode, examId){
+  document.getElementById('bulkMode').style.display = mode==='bulk'?'block':'none';
+  document.getElementById('singleMode').style.display = mode==='single'?'block':'none';
+  document.getElementById('tabBulk').classList.toggle('active', mode==='bulk');
+  document.getElementById('tabSingle').classList.toggle('active', mode==='single');
+}
+async function loadSingleStudents(examId){
+  const cls=document.getElementById('singleClass').value;
+  const allStudents=await apiGet('/api/students');
+  const filtered = cls ? allStudents.filter(s=>s.class===cls) : allStudents;
+  const sel=document.getElementById('singleStudent');
+  sel.innerHTML='<option value="">Select Student</option>' + filtered.slice(0,80).map(s=>`<option value="${s.id}" data-name="${s.first_name} ${s.last_name}" data-adm="${s.admission_no}">${s.first_name} ${s.last_name} — ${s.admission_no} (${s.class})</option>`).join('');
+  document.getElementById('singleSubjectsWrap').innerHTML='<div class="muted" style="text-align:center; padding:20px;">Now select a student</div>';
+}
+async function loadSingleSubjects(){
+  const sid=document.getElementById('singleStudent').value;
+  if(!sid) return;
+  const subjects=await apiGet('/api/subjects');
+  const wrap=document.getElementById('singleSubjectsWrap');
+  wrap.innerHTML=`<table><thead><tr><th>#</th><th>Subject</th><th>Marks (0-100)</th><th>Grade</th></tr></thead><tbody>${subjects.slice(0,18).map((subj,i)=>`<tr><td>${i+1}</td><td><b>${subj.name}</b><div class="muted" style="font-size:9px;">${subj.code||''}</div></td><td><input type="number" min="0" max="100" class="input singleMark" data-subject="${subj.name}" style="padding:6px; width:90px;" placeholder="—" oninput="this.nextElementSibling.textContent=scoreGrade(this.value||0).g"></td><td><span class="badge badge-green" style="min-width:28px; display:inline-block; text-align:center;">-</span></td></tr>`).join('')}</tbody></table>`;
+}
+function previewSingleEntry(){
+  const sid=document.getElementById('singleStudent').value;
+  const sname=document.getElementById('singleStudent').selectedOptions[0]?.textContent||'';
+  if(!sid) return document.getElementById('entryPreview').innerHTML=`<div class="alert" style="background:#fefce8; border:1px solid #fde68a;">Select a student first</div>`;
+  const entries=[...document.querySelectorAll('.singleMark')].filter(e=>e.value!=='').map(e=>({subject:e.dataset.subject, marks:parseFloat(e.value), grade:scoreGrade(e.value).g}));
+  if(!entries.length) return document.getElementById('entryPreview').innerHTML=`<div class="alert" style="background:#fefce8; border:1px solid #fde68a;">No marks entered</div>`;
+  document.getElementById('entryPreview').innerHTML=`<div class="card" style="background:#f0fdf4; border:1px solid #bbf7d0; padding:10px;">
+    <h4 style="font-size:12px;"><i class="ri-eye-line"></i> Preview — ${sname} • ${entries.length} subjects</h4>
+    <div class="table-wrap" style="margin-top:8px;"><table><thead><tr><th>Subject</th><th>Marks</th><th>Grade</th></tr></thead><tbody>${entries.map(e=>`<tr><td>${e.subject}</td><td><b>${e.marks}</b></td><td><span class="badge ${e.marks>=50?'badge-green':'badge-red'}">${e.grade}</span></td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
+async function saveSingleResults(examId){
+  const sid=document.getElementById('singleStudent').value;
+  if(!sid) return alert('Select a student');
+  const entries=[...document.querySelectorAll('.singleMark')].filter(e=>e.value!=='').map(e=>({subject:e.dataset.subject, marks:parseFloat(e.value)}));
+  if(!entries.length) return alert('Enter at least one subject mark');
+  let saved=0;
+  for(const ent of entries){
+    await apiPost('/api/results/bulk',{exam_id:examId, subject:ent.subject, entries:[{student_id:parseInt(sid), marks:ent.marks}]});
+    saved++;
+  }
+  alert(`Saved ${saved} subjects for student`); closeModal();
 }
 function previewResultsEntry(examId){
   const entries=[...document.querySelectorAll('.rMark')].filter(e=> e.value!=='').map(e=> ({adm:e.dataset.adm, name:e.dataset.name, marks:parseFloat(e.value), grade:scoreGrade(e.value).g}));
