@@ -116,7 +116,7 @@ app.post('/api/register', verify, (req,res)=>{
   }catch(e){ res.status(400).json({error:e.message});}
 });
 app.get('/api/me', verify, (req,res)=> res.json(req.user));
-app.get('/api/users', verify, role('admin','headteacher'), (req,res)=> res.json(db.prepare('SELECT id,username,role,name,email,created_at FROM users').all()));
+app.get('/api/users', verify, role('admin','headteacher','dos'), (req,res)=> res.json(db.prepare('SELECT id,username,role,name,email,created_at FROM users').all()));
 app.put('/api/users/:id', verify, role('admin'), (req,res)=>{
   const {username, role: newRole, name, email, password}=req.body;
   const id=req.params.id;
