@@ -151,7 +151,7 @@ const RBAC = {
   teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','events:read','transport:read'],
   class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','events:read','transport:read'],
   subject_teacher: ['dashboard','students:read','exams:read','exams:enter','aitutor:read','events:read'],
-  bursar: ['dashboard','students:read','staff:read','fees','expenses','reports','payroll','procurement','inventory','events:read','sms'],
+  bursar: ['dashboard','students:read','staff','payroll','fees','expenses','reports','procurement','inventory','events:read','sms'],
   nurse: ['dashboard','students:read','sickbay','events:read','aitutor:read'],
 };
 function can(role, perm){
