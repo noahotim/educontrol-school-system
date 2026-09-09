@@ -10,6 +10,8 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
-    # Add disk for SQLite persistence (Render free allows 1GB disk on paid, but free uses ephemeral - add Postgres for production)
-    # For true persistence on free tier, switch to Neon Postgres (replace better-sqlite3 with pg) OR add disk when you upgrade.
-    # Alternative free DB: https://neon.tech (free Postgres) — set DATABASE_URL and migrate.
+    # Persist SQLite across deploys/restarts (1GB disk — survives ephemeral wipes, keeps your nm users)
+    disk:
+      name: educontrol-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

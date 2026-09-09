@@ -385,20 +385,14 @@ function logout(){ localStorage.clear(); location.reload(); }
 function setMaintBanner(m){
   const b=document.getElementById('maintBanner');
   const lock=document.getElementById('suesLockout');
-  const msgEl=document.getElementById('suesLockMsg');
-  const isAdmin = user && user.role==='admin';
+  // As you asked: banner once its on, no full-screen lockout — keep login usable with banner on top
+  if(lock) lock.style.display='none';
   if(m && m.enabled){
     const auto=m.enabled_until?` — auto-off at <b>${new Date(m.enabled_until).toLocaleTimeString()}</b> (${Math.max(0,Math.round((new Date(m.enabled_until)-Date.now())/60000))} min left)`:'';
     if(b){ b.style.display='block'; b.innerHTML=`<b><i class="ri-alarm-warning-line"></i> MAINTENANCE MODE IS ON</b>${auto}<br>Only <b>admin</b> can sign in right now. Other accounts are blocked until it's OFF.`; }
     document.getElementById('username').value='admin';
-    if(lock && !isAdmin){
-      lock.style.display='flex';
-      if(msgEl) msgEl.textContent=(m.message||'Access to this system is temporarily locked.\nCONTACT NOAH to be authorised.')+(m.enabled_until?`\nAuto-off: ${new Date(m.enabled_until).toLocaleString()}`:'');
-      setTimeout(initSnake, 200);
-    } else if(lock){ lock.style.display='none'; }
   } else {
     if(b){ b.style.display='none'; b.innerHTML=''; }
-    if(lock) lock.style.display='none';
   }
 }
 async function suesLockoutLogin(){
@@ -2507,11 +2501,12 @@ async function checkMaintenance(){
     const m=await fetch('/api/maintenance/status').then(r=>r.json());
     setMaintBanner(m);
     const overlay=document.getElementById('maintenanceOverlay');
+    if(overlay) overlay.style.display='none';
+    const old=document.getElementById('hardLoginMsg'); if(old) old.remove();
     if(!overlay) return;
     if(m.enabled){
       const isAdmin = user && user.role==='admin';
       if(!isAdmin){
-        // HARD: instant logout + hard block (only if there WAS a live session) — SUES exact alert
         const hadSession = !!(token || user);
         if(hadSession && !window._suesAlertShown){
           window._suesAlertShown=true;
@@ -2519,37 +2514,15 @@ async function checkMaintenance(){
         }
         if(token || user){
           localStorage.clear(); token=null; user=null;
-          document.getElementById('appView').style.display='none';
-          document.getElementById('loginView').style.display='none';
         }
-        document.getElementById('maintOverlayMsg').innerHTML=`<b style="color:#991b1b;">HARD MAINTENANCE — SYSTEM LOCKED</b><br>${m.message||'System under HARD maintenance — only admin can login'}`;
-        document.getElementById('maintOverlayBy').textContent=m.enabled_until?`Auto-off ${new Date(m.enabled_until).toLocaleTimeString()} — only admin can disable`:'Only admin can disable';
-        // Banner shown on login card either way (admin CAN login to disable) — single banner
-        const old=document.getElementById('hardLoginMsg'); if(old) old.remove();
-        document.getElementById('username').value=!user?'admin':document.getElementById('username').value;
-        if(!token && !user){
-          // Already signed out: show login normally — no scary overlay
-          overlay.style.display='none';
-          document.getElementById('loginView').style.display='flex';
-        } else {
-          // Live non-admin session: hard overlay
-          overlay.style.display='flex';
-          overlay.onclick=null;
-          appView.style.display='none';
-          loginView.style.display='none';
-        }
+        document.getElementById('appView').style.display='none';
+        document.getElementById('loginView').style.display='flex';
       } else {
-        overlay.style.display='none';
-        const hardMsg=document.getElementById('hardLoginMsg');
-        if(hardMsg) hardMsg.remove();
         window._suesAlertShown=false;
       }
     } else {
-      overlay.style.display='none';
-      const hardMsg=document.getElementById('hardLoginMsg');
-      if(hardMsg) hardMsg.remove();
       window._suesAlertShown=false;
-      if(!user && document.getElementById('loginView').style.display==='none' && !document.getElementById('maintenanceOverlay').style.display==='flex'){
+      if(!user && document.getElementById('loginView').style.display==='none'){
         document.getElementById('loginView').style.display='flex';
       }
     }
