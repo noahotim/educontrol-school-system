@@ -1026,7 +1026,17 @@ async function confirmBulkImport(){
     renderStudents();
   }catch(e){ alert('Import failed: '+e.message); btn.disabled=false; btn.innerHTML='<i class="ri-check-line"></i> Confirm Import (<span id="regCount">'+_regRows.length+'</span>)'; }
 }
-function exportStudentsCSV(){ window.open('/api/students', '_blank'); alert('Use browser print or copy. For full CSV, backend supports CSV export via API extension.'); }
+function exportStudentsCSV(){
+  apiGet('/api/students').then(students=>{
+    if(!students.length) return alert('No students to export');
+    const cols=['admission_no','first_name','last_name','class','gender','dob','parent_name','parent_phone','address','admission_date','status'];
+    const header=['Adm No','First Name','Last Name','Class','Gender','DOB','Parent Name','Parent Phone','Address','Admission Date','Status'].join(',');
+    const rows=students.map(s=> cols.map(c=> '"'+String(s[c]||'').replace(/"/g,'""')+'"').join(','));
+    const csv=[header, ...rows].join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`Students_${today()}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }).catch(e=> alert('Export failed: '+e.message));
+}
 
 // ATTENDANCE — upgrade-aware (senses P1-P7 → S1-S6)
 async function renderAttendance(){
