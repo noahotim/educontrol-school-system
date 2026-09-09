@@ -147,6 +147,7 @@ app.delete('/api/users/:id', verify, role('admin'), (req,res)=>{
 const RBAC = {
   admin: ['*'],
   headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff:read','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
+  dos: ['dashboard','students','attendance','classes','exams','reportcards','exams:compile','classes:promote','staff:read','aitutor','events','transport:read','backup:read'],
   teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','events:read','transport:read'],
   class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','events:read','transport:read'],
   subject_teacher: ['dashboard','students:read','exams:read','exams:enter','aitutor:read','events:read'],
