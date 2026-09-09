@@ -564,10 +564,10 @@ async function renderDashboard(){
   $('#content').innerHTML=`<div class="grid grid4"><div class="card skeleton" style="height:90px;"></div><div class="card skeleton" style="height:90px;"></div><div class="card skeleton" style="height:90px;"></div><div class="card skeleton" style="height:90px;"></div></div><div class="grid grid4" style="margin-top:16px"><div class="card skeleton" style="height:70px;"></div><div class="card skeleton" style="height:70px;"></div><div class="card skeleton" style="height:70px;"></div><div class="card skeleton" style="height:70px;"></div></div><div class="grid grid2" style="margin-top:16px"><div class="card skeleton" style="height:180px;"></div><div class="card skeleton" style="height:180px;"></div></div>`;
   const d=await apiGet('/api/dashboard', true);
   const role = user.role;
-  const isAdmin = role==='admin', isHead = role==='headteacher', isTeacher = role==='teacher', isBursar = role==='bursar', isNurse = role==='nurse';
-  const titleMap = {admin:'Admin Control Centre', headteacher:'Head Teacher Dashboard', teacher:'Teacher Dashboard', bursar:'Bursar - Finance Centre', nurse:'Sickbay Dashboard'};
+  const isAdmin = role==='admin', isHead = role==='headteacher', isDos = role==='dos', isTeacher = role==='teacher', isClassTeacher = role==='class_teacher', isSubjectTeacher = role==='subject_teacher', isBursar = role==='bursar', isNurse = role==='nurse';
+  const titleMap = {admin:'Admin Control Centre', headteacher:'Head Teacher Dashboard', dos:'Director of Studies — Academic Centre', teacher:'Teacher Dashboard', class_teacher:'Class Teacher Dashboard', subject_teacher:'Subject Teacher Dashboard', bursar:'Bursar - Finance Centre', nurse:'Sickbay Dashboard'};
   $('#pageTitle').textContent = titleMap[role] || 'Dashboard';
-  let html = `<div class="alert" style="background:${isTeacher?'#eff6ff':isBursar?'#fefce8':isNurse?'#fdf2f8':'#f0fdf4'}; border:1px solid ${isTeacher?'#bfdbfe':isBursar?'#fde68a':isNurse?'#fbcfe8':'#bbf7d0'}; display:flex; justify-content:space-between; align-items:center;"><div><b>${titleMap[role]}</b> <span class="muted">- ${user.name}</span> <span class="badge badge-blue" style="margin-left:6px;">${role}</span></div><span class="muted" style="font-size:11px;">${isAdmin?'Full access to all modules':isHead?'Academic + finance overview':isTeacher?'Academic | Attendance | Exams | Report Cards':isBursar?'Finance | Payroll | Fees | Reports':isNurse?'Medical | Sickbay | Students view':''}</span></div>`;
+  let html = `<div class="alert" style="background:${isTeacher||isDos||isClassTeacher||isSubjectTeacher?'#eff6ff':isBursar?'#fefce8':isNurse?'#fdf2f8':'#f0fdf4'}; border:1px solid ${isTeacher||isDos||isClassTeacher||isSubjectTeacher?'#bfdbfe':isBursar?'#fde68a':isNurse?'#fbcfe8':'#bbf7d0'}; display:flex; justify-content:space-between; align-items:center;"><div><b>${titleMap[role]}</b> <span class="muted">- ${user.name}</span> <span class="badge badge-blue" style="margin-left:6px;">${role}</span></div><span class="muted" style="font-size:11px;">${isAdmin?'Full access to all modules':isHead?'Academic + finance overview':isDos?'Academic centre — assigns class teachers, Term III auto-promotion, exams & report cards':isTeacher||isClassTeacher||isSubjectTeacher?'Academic | Attendance | Exams | Report Cards':isBursar?'Finance | Payroll | Fees | Reports':isNurse?'Medical | Sickbay | Students view':''}</span></div>`;
 
   if(isBursar){
     html += `
@@ -588,7 +588,7 @@ async function renderDashboard(){
       <button class="btn btn-sm btn-outline" onclick="navigate('reports')">Financial Reports</button>
       <button class="btn btn-sm btn-outline" onclick="navigate('sms')">Fee SMS</button>
     </div></div>`;
-  } else if(isTeacher){
+  } else if(isTeacher||isClassTeacher||isSubjectTeacher){
     html += `
     <div class="grid grid4" style="margin-top:14px;">
       <div class="card stat"><div><div class="muted">My Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">All classes</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
@@ -607,6 +607,25 @@ async function renderDashboard(){
       <button class="btn btn-sm btn-outline" onclick="navigate('aitutor')">AI Tutor</button>
       <button class="btn btn-sm btn-outline" onclick="navigate('classes')">My Classes</button>
     </div><div class="alert alert-info" style="margin-top:10px;">You have <b>Academic access only</b> - Finance, Payroll, Sickbay edit and Backup are restricted (403).</div></div>`;
+  } else if(isDos){
+    html += `
+    <div class="grid grid4" style="margin-top:14px;">
+      <div class="card stat"><div><div class="muted">Students</div><div class="kpi">${fmt(d.students)}</div><div class="muted">${d.classes? `Classes ${d.classes}` : 'Active'}</div></div><div class="stat-icon" style="background:#dbeafe;color:#1e40af"><i class="ri-team-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Staff</div><div class="kpi">${fmt(d.staff)}</div><div class="muted">Assign class teachers</div></div><div class="stat-icon" style="background:#fef3c7;color:#92400e"><i class="ri-shield-star-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">Exams</div><div class="kpi">${fmt(d.exams||d.feesByMonth.length)}</div><div class="muted">Term III ready</div></div><div class="stat-icon" style="background:#e0f2fe;color:#0369a1"><i class="ri-file-list-3-line"></i></div></div>
+      <div class="card stat"><div><div class="muted">To Promote</div><div class="kpi">${fmt(d.students)}</div><div class="muted">End of Term III</div></div><div class="stat-icon" style="background:#dcfce7;color:#166534"><i class="ri-magic-line"></i></div></div>
+    </div>
+    <div class="grid grid2" style="margin-top:16px;">
+      <div class="card"><h4>Students by Class</h4><canvas id="c2" height="140"></canvas></div>
+      <div class="card"><h4>Attendance - Last 7 Days</h4><canvas id="c4" height="140"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:16px;"><h4>Director of Studies — Academic Centre</h4><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+      <button class="btn btn-sm" style="background:#7c3aed; color:#fff;" onclick="navigate('classes')"><i class="ri-shield-star-line"></i> Assign Class Teachers</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('exams')">Exams & Compile</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('reportcards')">Report Cards</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('classes')">Auto-Promote Term III</button>
+      <button class="btn btn-sm btn-outline" onclick="navigate('attendance')">Attendance Lists</button>
+    </div><div class="alert" style="background:#f3e8ff; border:1px solid #d8b4fe; color:#6b21a8; margin-top:10px; font-size:11px;">You manage academics — assign class teachers, oversee exams, one-click <b>Term III auto-promotion</b> (pass mark). Finance & Sickbay restricted.</div></div>`;
   } else if(isNurse){
     html += `
     <div class="grid grid4" style="margin-top:14px;">
