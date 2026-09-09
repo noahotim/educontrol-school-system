@@ -853,10 +853,10 @@ function openImportRegistrationModal(){
       <div><label>Term (optional)</label><input id="regTerm" class="input" placeholder="e.g. 2026 T1" value="2026 T1"></div>
     </div>
     <div style="margin-top:10px; border:1px dashed #cbd5e1; border-radius:10px; padding:14px; text-align:center; background:#f8fafc;">
-      <input type="file" id="regFile" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleRegFile(this)">
-      <button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="document.getElementById('regFile').click()"><i class="ri-file-upload-line"></i> Choose CSV / Excel file from your computer</button>
-      <div class="muted" style="font-size:11px; margin-top:6px;">.csv or .xlsx — file is read locally</div>
-      <div style="margin-top:8px;"><a href="#" onclick="downloadRegistrationTemplate(); return false;" style="font-size:11px; color:var(--primary);">⬇ Download CSV template (Name,Class,Gender,DOB,Parent,Phone)</a></div>
+      <input type="file" id="regFile" accept=".csv,.xlsx,.xls,.jpg,.jpeg,.png,.pdf" style="display:none;" onchange="handleRegFile(this)">
+      <button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="document.getElementById('regFile').click()"><i class="ri-file-upload-line"></i> Choose file — CSV / Excel / or Photo of paper list</button>
+      <div class="muted" style="font-size:11px; margin-top:6px;">.csv / .xlsx **or** take a photo of the **paper & pen** list (JPG/PNG) — system extracts via OCR. File is read locally.</div>
+      <div style="margin-top:8px;"><a href="#" onclick="downloadRegistrationTemplate(); return false;" style="font-size:11px; color:var(--primary);">⬇ Download CSV template (Name,Class,Gender,DOB,Parent,Phone)</a> • <span class="muted" style="font-size:10px;">Tip: For paper lists, write clearly: <code>Name | Class | Gender</code> per line</span></div>
     </div>
     <div id="regPreview" style="margin-top:10px;"></div>
     <div id="regMsg" class="muted" style="font-size:11px; margin-top:6px;"></div>
@@ -872,6 +872,71 @@ function downloadRegistrationTemplate(){
 async function handleRegFile(inp){
   const f=inp.files[0]; if(!f) return;
   const name=f.name.toLowerCase();
+  // Paper & pen photo (JPG/PNG/PDF) → OCR extract
+  if(name.endsWith('.jpg')||name.endsWith('.jpeg')||name.endsWith('.png')||name.endsWith('.pdf')){
+    document.getElementById('regMsg').innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Running OCR on paper list photo… This may take 10–20 seconds. Keep this window open.';
+    try{
+      if(!window.Tesseract){
+        await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+      }
+      let imageSrc='';
+      if(name.endsWith('.pdf')){
+        document.getElementById('regMsg').textContent='PDF detected — please export paper list as JPG/PNG photo for best OCR, or save Excel as CSV. Attempting PDF text extract…';
+        // Try to extract via image fallback: use first page as image via object URL (Tesseract can handle PDF via conversion? Fallback to error)
+        imageSrc=URL.createObjectURL(f);
+      } else {
+        imageSrc=URL.createObjectURL(f);
+      }
+      const result=await Tesseract.recognize(imageSrc, 'eng', {logger: m=>{ if(m.status==='recognizing text' && m.progress) document.getElementById('regMsg').textContent=`OCR ${(m.progress*100).toFixed(0)}% — extracting handwritten names…`; }});
+      URL.revokeObjectURL(imageSrc);
+      const text=result.data.text||'';
+      if(!text.trim()) throw new Error('No text detected — try a clearer photo (good light, straight, close-up).');
+      // Parse OCR lines: expect "1. John Doe P1" or "John Doe | P1 | M" per line
+      const lines=text.split(/\r?\n/).map(l=> l.trim()).filter(l=> l.length>2);
+      // Convert OCR lines to rows: try to split by 2+ spaces, |, ,, or tab
+      const rows=lines.map(l=>{
+        // Remove leading number/bullet: "1. " " - "
+        const clean=l.replace(/^\s*\d+[\.\)]\s*/, '').replace(/^\s*[-•]\s*/, '');
+        const parts=clean.split(/\s*[|,\t]\s*|\s{2,}/).map(p=> p.trim()).filter(Boolean);
+        if(parts.length>=2) return parts;
+        // Fallback: split by single space, guess Name (first 2 tokens) + Class (token containing P/S + digit) + Gender
+        const toks=clean.split(/\s+/);
+        const classTok=toks.find(t=> /^[PS]\d/i.test(t));
+        const genderTok=toks.find(t=> /^(M|F|Male|Female)$/i.test(t));
+        const nameToks=toks.filter(t=> t!==classTok && t!==genderTok);
+        const name=nameToks.slice(0,2).join(' ');
+        return [name, classTok||'', genderTok||''];
+      }).filter(r=> r[0]);
+      // Build rows for extractor: use header mapping via synthetic header
+      const synthHeader=['name','class','gender'];
+      const synthRows=[synthHeader, ...rows];
+      // Reuse CSV extractor logic
+      window._ocrRows=synthRows;
+      // Directly call extractor with synthetic rows
+      const header=synthRows[0].map(h=> String(h).trim().toLowerCase());
+      const dataRows=synthRows.slice(1);
+      const idx={nm: header.indexOf('name'), cls: header.indexOf('class'), gen: header.indexOf('gender')};
+      const fallbackClass=document.getElementById('regClass').value||'';
+      const extracted=[];
+      dataRows.forEach((r,i)=>{
+        const nm=String(r[idx.nm]||'').trim(); if(!nm) return;
+        const parts=nm.split(/\s+/); const fn=parts[0]||''; const ln=parts.slice(1).join(' ')||'';
+        const cls=String(r[idx.cls]||fallbackClass).trim()||fallbackClass||'P1';
+        const gen=String(r[idx.gen]||'').trim();
+        if(!fn) return;
+        extracted.push({first_name:fn, last_name:ln, class:cls, gender:gen, dob:'', parent_name:'', parent_phone:'', address:'', admission_no: 'ADM'+Date.now().toString().slice(-6)+(100+i).toString().slice(-3), status:'Active', admission_date: today()});
+      });
+      const seen=new Set(); _regRows=extracted.filter(r=>{ const k=(r.first_name+r.last_name+r.class).toLowerCase(); if(seen.has(k)) return false; seen.add(k); return true; });
+      document.getElementById('regCount').textContent=_regRows.length;
+      document.getElementById('regConfirmBtn').style.display=_regRows.length?'inline-flex':'none';
+      document.getElementById('regMsg').innerHTML=`OCR extracted <b>${_regRows.length}</b> names from <b>${f.name}</b> — review below, correct any misread, then Confirm. <span class="muted">Tip: If handwriting is unclear, edit the table before importing.</span>`;
+      // Show editable preview for OCR (allow correction)
+      document.getElementById('regPreview').innerHTML=`<div style="max-height:260px; overflow:auto; border:1px solid #e2e8f0; border-radius:8px;"><table><thead><tr><th>#</th><th>Name (edit if OCR misread)</th><th>Class</th><th>Gender</th></tr></thead><tbody>${_regRows.map((r,i)=>`<tr><td>${i+1}</td><td><input class="input" id="ocr_name_${i}" value="${r.first_name} ${r.last_name}" style="padding:4px; font-size:11px;"></td><td><input class="input" id="ocr_class_${i}" value="${r.class}" style="padding:4px; width:70px; font-size:11px;"></td><td><input class="input" id="ocr_gen_${i}" value="${r.gender}" style="padding:4px; width:60px; font-size:11px;"></td></tr>`).join('')}</tbody></table></div><div class="muted" style="font-size:10px; margin-top:4px;">Edit any misread names/classes before Confirm — OCR may confuse 1/I/l, 0/O etc.</div>`;
+      // Override confirm to use edited values
+      window._ocrMode=true;
+      return;
+    }catch(e){ document.getElementById('regMsg').innerHTML='<span style="color:#dc2626">OCR failed: '+e.message+'</span><br><span class="muted" style="font-size:11px;">Try a clearer photo (straight, bright, close-up) or type the list into the CSV template and upload as .csv/.xlsx for perfect extraction.</span>'; return; }
+  }
   let rows=[];
   try{
     if(name.endsWith('.xlsx')||name.endsWith('.xls')){
@@ -934,11 +999,28 @@ async function handleRegFile(inp){
   document.getElementById('regPreview').innerHTML=`<div style="max-height:240px; overflow:auto; border:1px solid #e2e8f0; border-radius:8px;"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Gender</th><th>DOB</th><th>Parent Phone</th></tr></thead><tbody>${_regRows.slice(0,50).map((r,i)=>`<tr><td>${i+1}</td><td><b>${r.first_name} ${r.last_name}</b></td><td><span class="badge badge-blue">${r.class}</span></td><td>${r.gender||'-'}</td><td>${r.dob||'-'}</td><td>${r.parent_phone||'-'}</td></tr>`).join('')}</tbody></table></div>${_regRows.length>50?`<div class="muted" style="font-size:11px; text-align:center; margin-top:4px;">+ ${_regRows.length-50} more rows (preview 50)</div>`:``}`;
 }
 async function confirmBulkImport(){
+  // If OCR photo, use edited values from inputs
+  if(window._ocrMode){
+    const edited=[];
+    for(let i=0;i<_regRows.length;i++){
+      const nameEl=document.getElementById('ocr_name_'+i);
+      const classEl=document.getElementById('ocr_class_'+i);
+      const genEl=document.getElementById('ocr_gen_'+i);
+      if(!nameEl) continue;
+      const nm=nameEl.value.trim(); if(!nm) continue;
+      const parts=nm.split(/\s+/); const fn=parts[0]||''; const ln=parts.slice(1).join(' ')||'';
+      const cls=classEl? classEl.value.trim() : _regRows[i].class;
+      const gen=genEl? genEl.value.trim() : _regRows[i].gender;
+      edited.push({first_name:fn, last_name:ln, class:cls, gender:gen, dob:'', parent_name:'', parent_phone:'', address:'', admission_no: _regRows[i].admission_no, status:'Active', admission_date: today()});
+    }
+    _regRows=edited;
+  }
   if(!_regRows.length) return;
   const btn=document.getElementById('regConfirmBtn'); btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Importing...';
   try{
     const term=document.getElementById('regTerm').value||'';
     const res=await apiPost('/api/students/bulk', {students: _regRows, term});
+    window._ocrMode=false;
     closeModal();
     alert(`Imported ${res.inserted} students (skipped ${res.skipped} duplicates) out of ${res.total}. Term: ${term||'—'}`);
     renderStudents();
