@@ -277,6 +277,22 @@ function init(){
     class TEXT NOT NULL,
     UNIQUE(user_id, subject, class)
   );
+  CREATE TABLE IF NOT EXISTS class_teachers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class TEXT UNIQUE NOT NULL,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    from_class TEXT NOT NULL,
+    to_class TEXT,
+    year TEXT,
+    term TEXT DEFAULT 'Term III',
+    average REAL,
+    recommendation TEXT,
+    date TEXT DEFAULT (datetime('now'))
+  );
   CREATE TABLE IF NOT EXISTS compiled_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
@@ -313,6 +329,8 @@ function init(){
     const add=(u,p,r,nm)=>{ if(!db.prepare('SELECT id FROM users WHERE username=?').get(u)){ const h=bcrypt.hashSync(p,10); db.prepare('INSERT INTO users (username,password,role,name,email) VALUES (?,?,?,?,?)').run(u,h,r,nm,u+'@school.local'); console.log('Created '+u+' / '+p); } };
     add('classteacher','class123','class_teacher','Ms. Nalwoga (Class Teacher)');
     add('subjectteacher','subject123','subject_teacher','Mr. Tumusiime (Subject Teacher)');
+    add('dos','dos123','dos','Director of Studies');
+    add('nm','123456','teacher','NM User');
     // auto-assign subjects to subject teacher for demo
     const st=db.prepare('SELECT id FROM users WHERE username=?').get('subjectteacher');
     if(st){

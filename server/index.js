@@ -187,6 +187,25 @@ app.get('/api/my-assignments', verify, (req,res)=>{
   const rows=db.prepare('SELECT * FROM teacher_assignments WHERE user_id=?').all(req.user.id);
   res.json(rows);
 });
+// Class Teacher assignments — who is class teacher for each class (assignable by admin/headteacher/DOS)
+app.get('/api/class-teachers', verify, (req,res)=>{
+  const rows=db.prepare('SELECT ct.*, u.username, u.name as teacher_name, u.role FROM class_teachers ct LEFT JOIN users u ON u.id=ct.user_id ORDER BY ct.class').all();
+  res.json(rows);
+});
+app.post('/api/class-teachers', verify, (req,res)=>{
+  if(!['admin','headteacher','dos'].includes(req.user.role)) return res.status(403).json({error:'Only admin/headteacher/DOS can assign class teachers'});
+  const {class:cls, user_id}=req.body;
+  if(!cls || !user_id) return res.status(400).json({error:'class and user_id required'});
+  try{
+    db.prepare('INSERT OR REPLACE INTO class_teachers (class, user_id) VALUES (?,?)').run(cls, user_id);
+    res.json({ok:true});
+  }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.delete('/api/class-teachers/:id', verify, (req,res)=>{
+  if(!['admin','headteacher','dos'].includes(req.user.role)) return res.status(403).json({error:'Only admin/headteacher/DOS can remove'});
+  db.prepare('DELETE FROM class_teachers WHERE id=?').run(req.params.id);
+  res.json({ok:true});
+});
 // Compile results — class_teacher one-click (auto aggregates all subjects)
 app.post('/api/results/compile/:examId', verify, authorize('exams:compile','exams','*'), (req,res)=>{
   const examId=req.params.examId;
@@ -513,6 +532,57 @@ app.post('/api/promote', verify, authorize('classes'), (req,res)=>{
   const ins = db.prepare('INSERT INTO promotions (student_id, from_class, to_class, year, date) VALUES (?,?,?,?,?)');
   const tx=db.transaction(()=>{ for(const s of students){ upd.run(to_class, s.id); ins.run(s.id, from_class, to_class, year, dayjs().format('YYYY-MM-DD')); } });
   tx(); res.json({promoted: students.length});
+});
+// Automatic promotion at end of Term III — based on pass mark, recommends repeat / change learning environment, one-click generates all, included in report card
+app.post('/api/promote/auto', verify, (req,res)=>{
+  if(!['admin','headteacher','dos','class_teacher'].includes(req.user.role) && !req.user.role.includes('teacher')) return res.status(403).json({error:'Only admin/headteacher/DOS/class teacher can promote'});
+  const {from_class, to_class, year, term, passMark} = req.body;
+  const pass = Number(passMark||50);
+  const t = term||'Term III';
+  if(t!=='Term III' && t!=='Term 3') return res.status(400).json({error:'Promotion happens at end of Term III only (Term 3)'});
+  const students = db.prepare('SELECT * FROM students WHERE class=?').all(from_class);
+  if(!students.length) return res.status(404).json({error:'No students in '+from_class});
+  // Get exams for Term III for that class/year
+  const exams = db.prepare("SELECT * FROM exams WHERE class=? AND term LIKE '%III%'").all(from_class);
+  const examIds = exams.map(e=>e.id);
+  let resultsByStudent={};
+  if(examIds.length){
+    const placeholders=examIds.map(_=>'?').join(',');
+    const rows=db.prepare(`SELECT student_id, AVG(marks) as avg FROM results WHERE exam_id IN (${placeholders}) GROUP BY student_id`).all(...examIds);
+    rows.forEach(r=> resultsByStudent[r.student_id]=Number(r.avg));
+  }
+  const upd = db.prepare('UPDATE students SET class=? WHERE id=?');
+  const ins = db.prepare('INSERT INTO promotions (student_id, from_class, to_class, year, term, average, recommendation, date) VALUES (?,?,?,?,?,?,?,?)');
+  let promoted=0, repeated=0, changed=0;
+  const details=[];
+  const tx=db.transaction(()=>{
+    for(const s of students){
+      const avg = resultsByStudent[s.id] ?? null;
+      let rec='', dest=null;
+      if(avg===null){
+        rec='No marks — recommend Repeat';
+        dest=null; repeated++;
+      } else if(avg >= pass){
+        rec=`Promoted to ${to_class} (Avg ${avg.toFixed(1)}% ≥ ${pass}%)`;
+        dest=to_class; promoted++;
+        upd.run(dest, s.id);
+      } else if(avg < 30 || avg < pass-20){
+        rec=`Recommend Change Learning Environment (Avg ${avg.toFixed(1)}% < ${pass}%)`;
+        dest=null; changed++;
+      } else {
+        rec=`Recommend Repeat ${from_class} (Avg ${avg.toFixed(1)}% < ${pass}%)`;
+        dest=null; repeated++;
+      }
+      ins.run(s.id, from_class, dest||from_class, year||new Date().getFullYear().toString(), t, avg, rec, dayjs().format('YYYY-MM-DD'));
+      details.push({student_id:s.id, name: s.first_name+' '+s.last_name, admission_no:s.admission_no, average: avg, recommendation: rec, promoted: !!dest});
+    }
+  });
+  tx();
+  res.json({promoted, repeated, changed, total: students.length, passMark: pass, term: t, details});
+});
+app.get('/api/promotions/:student_id', verify, (req,res)=>{
+  const row=db.prepare('SELECT * FROM promotions WHERE student_id=? ORDER BY date DESC LIMIT 1').get(req.params.student_id);
+  res.json(row||{});
 });
 
 // AI Tutor - simple rule based

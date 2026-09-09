@@ -234,6 +234,7 @@ function today(){ return new Date().toISOString().slice(0,10); }
 const ROLES = {
   admin: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff','payroll','fees','expenses','reports','procurement','inventory','sickbay','transport','events','sms','backup','roles'],
   headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
+  dos: ['dashboard','students','attendance','classes','exams','reportcards','exams:compile','classes:promote','staff:read','aitutor','events','transport:read','backup:read'],
   teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','events:read','transport:read'],
   class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','events:read','transport:read'],
   subject_teacher: ['dashboard','students:read','exams:read','exams:enter','aitutor:read','events:read'],
@@ -666,12 +667,21 @@ async function renderDashboard(){
 
 // STUDENTS — with ID Cards + QR + Bursar fix
 async function renderStudents(){
-  let students=[], classes=[];
+  let students=[], classes=[], school={level:'primary', activeClasses:['P1','P2','P3','P4','P5','P6','P7']};
   try{ students=await apiGet('/api/students'); } catch(e){ $('#content').innerHTML=`<div class="card" style="text-align:center; padding:30px;"><i class="ri-lock-2-line" style="font-size:32px; color:var(--danger)"></i><h4>Access Denied</h4><p class="muted">${e.message}</p></div>`; return; }
-  try{ classes=await apiGet('/api/classes'); } catch(e){ classes=[]; }
+  try{ classes=await apiGet('/api/classes'); }catch(e){ classes=[]; }
+  try{ school=await fetch('/api/settings/school').then(r=>r.json()); }catch(e){}
+  // Filter students by active level: primary → P1-P7 only, secondary → S1-S6 only, combined → all
+  const activeSet=new Set(school.activeClasses||[]);
+  const levelFiltered=students.filter(s=> activeSet.has(s.class));
+  const filteredCount=levelFiltered.length;
+  const hiddenCount=students.length-filteredCount;
+  students=levelFiltered;
   const canWrite = canAccess('students');
   const canID = canAccess('students:read');
+  const levelBanner = hiddenCount ? `<div class="alert" style="background:#e0f2fe; border:1px solid #7dd3fc; color:#0c4a6e; font-size:11px; margin-bottom:8px;"><b>${school.level.toUpperCase()} mode:</b> Showing <b>${filteredCount}</b> students in active classes <b>${[...activeSet].join(', ')}</b>. <b>${hiddenCount}</b> from other level hidden. Switch level in <b>Backup → Scalability</b> to see them. <button class="btn btn-sm btn-outline" style="padding:2px 6px; font-size:10px; margin-left:6px;" onclick="showAllStudentsTemp()">Show all ${students.length+hiddenCount}</button></div>` : `<div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; font-size:11px; margin-bottom:8px;"><b>${school.level.toUpperCase()}:</b> Active <b>${[...activeSet].join(', ')}</b> — ${filteredCount} students shown.</div>`;
   $('#content').innerHTML=`
+  ${levelBanner}
   <div class="toolbar" style="flex-wrap:wrap;">
     <div class="search"><i class="ri-search-line"></i><input id="stuQ" placeholder="Search name, admission no, class..." oninput="filterStudents()"></div>
     ${canWrite?`<button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit Student</button>`:``}
@@ -682,6 +692,14 @@ async function renderStudents(){
   <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th>Actions</th></tr></thead><tbody id="stuBody">${students.map(s=>`<tr data-q="${(s.first_name+' '+s.last_name+' '+s.admission_no+' '+s.class).toLowerCase()}"><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b><div class="muted" style="font-size:11px">${s.dob||''}</div></td><td><span class="badge badge-blue">${s.class||'-'}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td style="display:flex; gap:4px; flex-wrap:wrap;">${canID?`<button class="btn btn-sm" style="padding:4px 8px; font-size:11px; background:#0f172a;" onclick="previewStudentCard(${s.id})"><i class="ri-id-card-line"></i> ID Preview</button>`:``}${canWrite?`<button class="btn btn-sm btn-outline" style="padding:4px 8px;" onclick="openStudentModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" style="padding:4px 8px;" onclick="delStudent(${s.id})">Del</button>`: `<span class="muted" style="font-size:11px; align-self:center;">View only</span>`}</td></tr>`).join('')}</tbody></table></div>
   <div class="muted" style="margin-top:8px">${students.length} students ${classes.length?`| Classes: ${classes.map(c=>c.name).join(', ')}`:``} ${!canWrite?`<span class="badge badge-amber" style="margin-left:6px;">Bursar: View only — no edit/delete</span>`:``}</div>
   <div id="studentCardPreview" style="margin-top:16px;"></div>`;
+}
+async function showAllStudentsTemp(){
+  // Bypass level filter — show all students regardless of primary/secondary
+  let students=[]; try{ students=await apiGet('/api/students'); }catch(e){ return; }
+  const canWrite=canAccess('students'); const canID=canAccess('students:read');
+  $('#content').innerHTML=`<div class="alert" style="background:#fef3c7; border:1px solid #fde68a; color:#92400e; font-size:11px; margin-bottom:8px;"><b>Showing ALL levels</b> — ${students.length} students (primary + secondary). <button class="btn btn-sm btn-outline" style="padding:2px 6px; font-size:10px; margin-left:6px;" onclick="renderStudents()">Back to ${(() => { try{ const s=JSON.parse(localStorage.getItem('schoolLevel')||'{}'); return s.level||'primary'; }catch(e){ return 'primary'; } })()} filter</button></div>
+  <div class="toolbar" style="flex-wrap:wrap;"><div class="search"><i class="ri-search-line"></i><input id="stuQ" placeholder="Search name, admission no, class..." oninput="filterStudents()"></div>${canWrite?`<button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit Student</button>`:``}${canWrite?`<button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="openImportRegistrationModal()"><i class="ri-upload-2-line"></i> Import Registration List</button>`:``}<button class="btn btn-sm btn-outline" onclick="exportStudentsCSV()">Export CSV</button>${canID?`<button class="btn btn-sm btn-outline" onclick="previewStudentsPDF()"><i class="ri-download-line"></i> List Preview</button><button class="btn btn-sm btn-outline" onclick="previewAllStudentCards()"><i class="ri-contacts-line"></i> ID Cards Preview</button>`:``}</div>
+  <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th>Actions</th></tr></thead><tbody>${students.map(s=>`<tr><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td>${canID?`<button class="btn btn-sm" style="padding:4px 8px; font-size:11px; background:#0f172a;" onclick="previewStudentCard(${s.id})">ID Preview</button>`:``}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function studentCardHTML(s){
   // QR now encodes verification card URL (well-designed): scan opens /verify card with Reg/Perf/Fees
@@ -1053,6 +1071,7 @@ async function renderAttendance(){
     <select id="attClass" class="input" style="width:auto">${allOptions}</select>
     <button class="btn btn-sm btn-outline" onclick="loadAttendance()">Load</button>
     <button class="btn btn-sm" onclick="saveAttendance()">Save Attendance</button>
+    <button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="openImportAttendanceModal()"><i class="ri-upload-2-line"></i> Import List (Paper/Scan)</button>
     <button class="btn btn-sm btn-outline" onclick="downloadAttendancePDF()"><i class="ri-download-line"></i> PDF (Class)</button>
     <button class="btn btn-sm btn-outline" onclick="downloadAttendanceGeneralPDF()"><i class="ri-file-list-line"></i> PDF (All)</button>
     <span class="muted" style="font-size:11px; align-self:center;"><i class="ri-checkbox-line"></i> ${active.length} active classes checked</span>
@@ -1154,21 +1173,173 @@ async function loadAttendanceLog(){
 }
 
 // CLASSES & PROMOTION
+let _attImportRows=[];
+function openImportAttendanceModal(){
+  const activeClass=document.getElementById('attClass')?.value||'';
+  const curDate=document.getElementById('attDate')?.value||today();
+  _attImportRows=[];
+  openModal(`<h3><i class="ri-upload-2-line"></i> Import Attendance List — Paper / Scan</h3>
+    <div class="alert" style="background:#e0f2fe; border:1px solid #7dd3fc; color:#0c4a6e; font-size:11px;">Teacher: <b>select the class this list belongs to BEFORE you upload</b>. System will organise the list for that class. Accepts typed CSV/Excel or <b>photo/scan of handwritten paper</b> or scanned PDF — OCR extracts locally.</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+      <div><label>Class * — list belongs to</label><select id="attImpClass" class="input"><option value="">Select Class</option><option value="P1" ${activeClass==='P1'?'selected':''}>P1</option><option value="P2" ${activeClass==='P2'?'selected':''}>P2</option><option value="P3" ${activeClass==='P3'?'selected':''}>P3</option><option value="P4" ${activeClass==='P4'?'selected':''}>P4</option><option value="P5" ${activeClass==='P5'?'selected':''}>P5</option><option value="P6" ${activeClass==='P6'?'selected':''}>P6</option><option value="P7" ${activeClass==='P7'?'selected':''}>P7</option><option value="S1">S1</option><option value="S2">S2</option><option value="S3">S3</option><option value="S4">S4</option><option value="S5">S5</option><option value="S6">S6</option></select></div>
+      <div><label>Date *</label><input id="attImpDate" type="date" class="input" value="${curDate}"></div>
+    </div>
+    <div style="margin-top:10px; border:1px dashed #cbd5e1; border-radius:10px; padding:14px; text-align:center; background:#f8fafc;">
+      <input type="file" id="attFile" accept=".csv,.xlsx,.xls,.jpg,.jpeg,.png,.pdf" style="display:none;" onchange="handleAttendanceFile(this)">
+      <button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="document.getElementById('attFile').click()"><i class="ri-file-upload-line"></i> Choose file — CSV / Excel / or Photo of paper attendance</button>
+      <div class="muted" style="font-size:10px; margin-top:6px;">For paper: write <code>Name — Present/Absent</code> per line, photo clearly. Example: <code>1. John Doe - Present</code></div>
+    </div>
+    <div id="attImpPreview" style="margin-top:10px;"></div>
+    <div id="attImpMsg" class="muted" style="font-size:11px; margin-top:6px;"></div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="btn btn-sm" id="attImpConfirm" style="display:none;" onclick="confirmAttendanceImport()"><i class="ri-check-line"></i> Confirm Import (<span id="attImpCount">0</span>)</button>
+      <button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button>
+    </div>`);
+}
+async function handleAttendanceFile(inp){
+  const f=inp.files[0]; if(!f) return;
+  const cls=document.getElementById('attImpClass').value;
+  if(!cls) return document.getElementById('attImpMsg').innerHTML='<span style="color:#dc2626">Select class first — the list belongs to which class?</span>';
+  const name=f.name.toLowerCase();
+  let rows=[];
+  try{
+    if(name.endsWith('.jpg')||name.endsWith('.jpeg')||name.endsWith('.png')||name.endsWith('.pdf')){
+      document.getElementById('attImpMsg').innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> OCR on attendance photo…';
+      if(!window.Tesseract){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+      const src=URL.createObjectURL(f);
+      const res=await Tesseract.recognize(src,'eng',{logger:m=>{ if(m.status==='recognizing text') document.getElementById('attImpMsg').textContent=`OCR ${(m.progress*100).toFixed(0)}%…`; }});
+      URL.revokeObjectURL(src);
+      const text=res.data.text||'';
+      const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(l=> l.length>3);
+      rows=lines.map(l=>{
+        const clean=l.replace(/^\s*\d+[\.\)]\s*/,'').replace(/^\s*[-•]\s*/,'');
+        let status='Present';
+        if(/absent|ab\s*$/i.test(clean)) status='Absent';
+        else if(/late/i.test(clean)) status='Late';
+        else if(/sick/i.test(clean)) status='Sick';
+        // Remove status word from name
+        const namePart=clean.replace(/\s*[-|,]\s*(Present|Absent|Late|Sick|P|A).*$/i,'').replace(/\s+(Present|Absent|Late|Sick|P|A)\s*$/i,'').trim();
+        return [namePart, status];
+      }).filter(r=> r[0]);
+      // Convert to extracted format
+      const students=await apiGet('/api/students');
+      const byClass=students.filter(s=> s.class===cls);
+      const byName={}; byClass.forEach(s=> byName[(s.first_name+' '+s.last_name).toLowerCase()]=s);
+      const extracted=rows.map((r,i)=>{
+        const nm=r[0]; const st=r[1]||'Present';
+        const found=byName[nm.toLowerCase()];
+        return {name:nm, status:st, student_id: found? found.id : null, admission_no: found? found.admission_no : ''};
+      });
+      _attImportRows=extracted;
+      document.getElementById('attImpCount').textContent=_attImportRows.length;
+      document.getElementById('attImpConfirm').style.display=_attImportRows.length?'inline-flex':'none';
+      document.getElementById('attImpMsg').innerHTML=`OCR extracted <b>${_attImportRows.length}</b> names for <b>${cls}</b> — matched <b>${_attImportRows.filter(r=>r.student_id).length}</b> to register. Review and Confirm.`;
+      document.getElementById('attImpPreview').innerHTML=`<div style="max-height:240px; overflow:auto; border:1px solid #e2e8f0; border-radius:8px;"><table><thead><tr><th>#</th><th>Name (OCR)</th><th>Status</th><th>Matched</th></tr></thead><tbody>${_attImportRows.map((r,i)=>`<tr><td>${i+1}</td><td><input class="input" id="att_name_${i}" value="${r.name}" style="padding:4px; font-size:11px;"></td><td><select class="input" id="att_status_${i}" style="padding:4px; font-size:11px;"><option ${r.status==='Present'?'selected':''}>Present</option><option ${r.status==='Absent'?'selected':''}>Absent</option><option ${r.status==='Late'?'selected':''}>Late</option><option ${r.status==='Sick'?'selected':''}>Sick</option></select></td><td>${r.student_id?`<span class="badge badge-green">${r.admission_no}</span>`:'<span class="badge badge-amber">not matched — will skip</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+      window._attOcrMode=true;
+      return;
+    }
+    // CSV/XLSX
+    if(name.endsWith('.xlsx')||name.endsWith('.xls')){
+      if(!window.XLSX){ document.getElementById('attImpMsg').textContent='Loading Excel parser…'; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+      const buf=await f.arrayBuffer(); const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; rows=XLSX.utils.sheet_to_json(ws,{header:1, defval:''});
+    } else {
+      const text=await f.text(); const clean=text.replace(/^\uFEFF/,''); const lines=clean.split(/\r?\n/).filter(l=> l.trim()!==''); rows=lines.map(l=>{ const out=[]; let cur='', inQ=false; for(let i=0;i<l.length;i++){ const c=l[i]; if(c=='"'){ if(inQ && l[i+1]=='"'){ cur+='"'; i++; } else inQ=!inQ; } else if(c===',' && !inQ){ out.push(cur.trim()); cur=''; } else cur+=c; } out.push(cur.trim()); return out; });
+    }
+    const header=rows[0].map(h=> String(h).trim().toLowerCase());
+    const hasHeader=header.some(h=> ['name','adm','status','present','absent'].some(k=> h.includes(k)));
+    const dataRows=hasHeader? rows.slice(1): rows;
+    const idxName=header.indexOf('name'); const idxAdm=header.findIndex(h=> h.includes('adm')); const idxStatus=header.indexOf('status');
+    const students=await apiGet('/api/students'); const byAdm={}; const byNameClass={}; students.filter(s=> s.class===cls).forEach(s=>{ byAdm[s.admission_no.toLowerCase()]=s; byNameClass[(s.first_name+' '+s.last_name).toLowerCase()]=s; });
+    const extracted=dataRows.map(r=>{
+      const nm= idxName>=0? String(r[idxName]||'').trim() : String(r[0]||'').trim();
+      const adm= idxAdm>=0? String(r[idxAdm]||'').trim() : '';
+      const st= idxStatus>=0? String(r[idxStatus]||'Present').trim() : String(r[1]||'Present').trim();
+      let found=null;
+      if(adm) found=byAdm[adm.toLowerCase()];
+      if(!found && nm) found=byNameClass[nm.toLowerCase()];
+      return {name: nm||adm, status: /absent/i.test(st)?'Absent': /late/i.test(st)?'Late': /sick/i.test(st)?'Sick':'Present', student_id: found? found.id:null, admission_no: found? found.admission_no: adm};
+    }).filter(r=> r.name);
+    _attImportRows=extracted;
+    document.getElementById('attImpCount').textContent=_attImportRows.length;
+    document.getElementById('attImpConfirm').style.display=_attImportRows.length?'inline-flex':'none';
+    document.getElementById('attImpMsg').textContent=`Extracted ${_attImportRows.length} rows for ${cls} — matched ${extracted.filter(r=>r.student_id).length} to register.`;
+    document.getElementById('attImpPreview').innerHTML=`<div style="max-height:240px; overflow:auto; border:1px solid #e2e8f0; border-radius:8px;"><table><thead><tr><th>#</th><th>Name/Adm</th><th>Status</th><th>Matched</th></tr></thead><tbody>${_attImportRows.slice(0,40).map((r,i)=>`<tr><td>${i+1}</td><td>${r.name}</td><td>${r.status}</td><td>${r.student_id?'<span class="badge badge-green">'+r.admission_no+'</span>':'<span class="badge badge-amber">no</span>'}</td></tr>`).join('')}</tbody></table></div>`;
+  }catch(e){ document.getElementById('attImpMsg').innerHTML='<span style="color:#dc2626">Failed: '+e.message+'</span>'; }
+}
+async function confirmAttendanceImport(){
+  const cls=document.getElementById('attImpClass').value;
+  const date=document.getElementById('attImpDate').value;
+  if(!cls||!date) return alert('Select class and date first');
+  // If OCR, use edited values
+  if(window._attOcrMode){
+    for(let i=0;i<_attImportRows.length;i++){
+      const n=document.getElementById('att_name_'+i)?.value.trim();
+      const s=document.getElementById('att_status_'+i)?.value;
+      if(n) _attImportRows[i].name=n;
+      if(s) _attImportRows[i].status=s;
+      // Re-match after edit
+      const students=await apiGet('/api/students');
+      const byName={}; students.filter(x=> x.class===cls).forEach(x=> byName[(x.first_name+' '+x.last_name).toLowerCase()]=x);
+      const found=byName[_attImportRows[i].name.toLowerCase()];
+      if(found){ _attImportRows[i].student_id=found.id; _attImportRows[i].admission_no=found.admission_no; }
+    }
+  }
+  const records=_attImportRows.filter(r=>r.student_id).map(r=>({student_id:r.student_id, status:r.status}));
+  if(!records.length) return alert('No matched students — check names match register for '+cls);
+  const btn=document.getElementById('attImpConfirm'); btn.disabled=true; btn.textContent='Saving…';
+  try{ await apiPost('/api/attendance/bulk',{date, records}); closeModal(); alert(`Saved ${records.length} attendance for ${cls} on ${date}`); renderAttendance(); window._attOcrMode=false; }catch(e){ alert('Save failed: '+e.message); btn.disabled=false; }
+}
 async function renderClasses(){
   const classes=await apiGet('/api/classes');
   const students=await apiGet('/api/students');
   const byClass={}; students.forEach(s=> byClass[s.class]=(byClass[s.class]||0)+1);
+  let classTeachers=[]; try{ classTeachers=await apiGet('/api/class-teachers'); }catch(e){}
+  const teacherMap={}; classTeachers.forEach(ct=> teacherMap[ct.class]=ct.teacher_name||ct.username||'—');
+  const canAssignCT = ['admin','headteacher','dos'].includes(user.role);
+  let users=[]; if(canAssignCT){ try{ users=await apiGet('/api/users'); }catch(e){} }
+  const teacherUsers=users.filter(u=> ['class_teacher','teacher','dos','headteacher','admin'].includes(u.role));
+  const classOptions=classes.map(c=>`<option>${c.name}</option>`).join('');
   $('#content').innerHTML=`
   <div class="grid grid2">
-    <div class="card"><h4>Classes</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Class</th><th>Capacity</th><th>Enrolled</th><th>Room</th></tr></thead><tbody>${classes.map(c=>`<tr><td><b>${c.name}</b></td><td>${c.capacity||40}</td><td>${byClass[c.name]||0}</td><td>${c.room||'-'}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="card"><h4>Classes</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Class</th><th>Capacity</th><th>Enrolled</th><th>Room</th><th>Class Teacher</th>${canAssignCT?'<th>Assign</th>':''}</tr></thead><tbody>${classes.map(c=>`<tr><td><b>${c.name}</b></td><td>${c.capacity||40}</td><td>${byClass[c.name]||0}</td><td>${c.room||'-'}</td><td>${teacherMap[c.name] ? `<span class="badge badge-blue">${teacherMap[c.name]}</span>` : '<span class="muted">— none —</span>'}</td>${canAssignCT?`<td><button class="btn btn-sm btn-outline" style="padding:4px 8px; font-size:11px;" onclick="openAssignClassTeacher('${c.name}')"><i class="ri-user-add-line"></i> Assign</button></td>`:''}</tr>`).join('')}</tbody></table></div><div class="alert" style="margin-top:10px; font-size:11px; background:#f8fafc; border:1px solid #e2e8f0;">${canAssignCT?'<b>Director of Studies / Head Teacher / Admin can assign class teachers.</b> Click Assign per class.': '<b>Class teachers assigned by:</b> Director of Studies, Head Teacher, or Admin.'}</div></div>
     <div class="card"><h4>Promote Students</h4><div class="alert alert-info">Moves all students from one class to next (e.g., P5 -> P6). Uses promotions log.</div>
-      <div class="form-grid"><div><label>From Class</label><select id="p_from" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div><div><label>To Class</label><select id="p_to" class="input">${classes.map(c=>`<option>${c.name}</option>`).join('')}</select></div><div><label>Year</label><input id="p_year" class="input" value="2026"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" onclick="doPromote()">Promote Now</button></div></div>
+      <div class="form-grid"><div><label>From Class</label><select id="p_from" class="input">${classOptions}</select></div><div><label>To Class</label><select id="p_to" class="input">${classOptions}</select></div><div><label>Year</label><input id="p_year" class="input" value="2026"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" onclick="doPromote()">Promote Now</button></div></div>
+      <div class="card" style="margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0;"><h4><i class="ri-magic-line"></i> Automatic Promotion — End of Term III Only</h4><div class="alert" style="background:#fff; border:1px solid #bbf7d0; font-size:11px; margin-top:6px;">System auto-promotes based on <b>pass mark</b>. Below pass → <b>Repeat</b>, very low → <b>Change Learning Environment</b>. Included in report card. <b>One click</b> generates all for the class.</div>
+        <div class="form-grid" style="margin-top:8px"><div><label>From Class</label><select id="ap_from" class="input">${classOptions}</select></div><div><label>To Class (promote to)</label><select id="ap_to" class="input">${classOptions}</select></div><div><label>Pass Mark %</label><input id="ap_pass" type="number" class="input" value="50" min="30" max="80"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="doAutoPromote()"><i class="ri-checkbox-circle-line"></i> Auto Promote (Term III)</button></div></div>
+        <div id="apResult" style="margin-top:8px;"></div>
+      </div>
       <h4 style="margin-top:14px">Add New Class</h4><div style="display:flex;gap:8px;margin-top:8px"><input id="newClass" class="input" placeholder="e.g., P8"><button class="btn btn-sm" onclick="addClass()">Add</button></div>
+      ${canAssignCT?`<div class="card" style="margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0;"><h4><i class="ri-shield-star-line"></i> Director of Studies</h4><div class="muted" style="font-size:11px; margin-top:4px;">DOS manages academics, assigns class teachers, oversees exams & promotions. <br><b>Login:</b> dos / dos123 • Assigned by Admin.</div></div>`:''}
     </div>
   </div>`;
 }
 async function doPromote(){ const from=$('#p_from').value, to=$('#p_to').value, year=$('#p_year').value; if(from===to) return alert('Same class'); const r=await apiPost('/api/promote',{from_class:from,to_class:to,year}); alert(`Promoted ${r.promoted} students`); renderClasses(); }
+async function doAutoPromote(){
+  const from=document.getElementById('ap_from').value, to=document.getElementById('ap_to').value, pass=document.getElementById('ap_pass').value;
+  if(from===to) return alert('Same class');
+  if(!confirm(`Auto-promote ${from} → ${to} at end of Term III with pass mark ${pass}%? This will use Term III exam averages, recommend Repeat / Change Learning Environment for those below pass, and include in report cards. Continue?`)) return;
+  const out=document.getElementById('apResult'); out.innerHTML='<i class="ri-loader-4-line" style="animation:spin 1s linear infinite; display:inline-block;"></i> Promoting…';
+  try{
+    const r=await apiPost('/api/promote/auto',{from_class:from,to_class:to, year: new Date().getFullYear().toString(), term:'Term III', passMark: Number(pass)});
+    out.innerHTML=`<div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0;"><b>Done — Term III Auto Promotion:</b> Promoted <b>${r.promoted}</b>, Repeat <b>${r.repeated}</b>, Change Env <b>${r.changed}</b> / ${r.total} (pass ${r.passMark}%)<br><div style="max-height:160px; overflow:auto; margin-top:8px; border:1px solid #e2e8f0; border-radius:8px; background:#fff;"><table><thead><tr><th>Adm</th><th>Name</th><th>Avg</th><th>Recommendation</th></tr></thead><tbody>${r.details.slice(0,30).map(d=>`<tr><td>${d.admission_no}</td><td>${d.name}</td><td>${d.average!==null? d.average.toFixed(1)+'%':'—'}</td><td><span class="badge ${d.promoted?'badge-green': d.recommendation.includes('Change')?'badge-red':'badge-amber'}">${d.recommendation}</span></td></tr>`).join('')}</tbody></table></div>${r.details.length>30?`<div class="muted" style="font-size:10px;">+ ${r.details.length-30} more</div>`:''}</div>`;
+    renderClasses();
+  }catch(e){ out.innerHTML=`<div class="alert" style="background:#fef2f2; border:1px solid #fecaca; color:#991b1b;">Failed: ${e.message}</div>`; }
+}
 async function addClass(){ const name=$('#newClass').value.trim(); if(!name) return; await apiPost('/api/classes',{name}); renderClasses(); }
+async function openAssignClassTeacher(cls){
+  let users=[]; try{ users=await apiGet('/api/users'); }catch(e){ return alert('Only admin/headteacher/DOS can assign'); }
+  const candidates=users.filter(u=> ['class_teacher','teacher','dos','headteacher','admin'].includes(u.role));
+  openModal(`<h3><i class="ri-user-star-line"></i> Assign Class Teacher — ${cls}</h3>
+    <div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; font-size:11px; margin-top:8px;">Only <b>Director of Studies / Head Teacher / Admin</b> can assign. Choose teacher for <b>${cls}</b>.</div>
+    <div style="margin-top:10px"><label>Select Teacher</label><select id="ct_user" class="input">${candidates.map(u=>`<option value="${u.id}">${u.name||u.username} — ${u.username} (${u.role})</option>`).join('')}</select></div>
+    <div style="display:flex; gap:8px; margin-top:12px;"><button class="btn btn-sm" onclick="assignClassTeacher('${cls}')"><i class="ri-check-line"></i> Assign to ${cls}</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>
+    <div id="ctMsg" class="muted" style="font-size:11px; margin-top:8px;"></div>`);
+}
+async function assignClassTeacher(cls){
+  const uid=parseInt(document.getElementById('ct_user').value);
+  const msg=document.getElementById('ctMsg');
+  try{ await apiPost('/api/class-teachers',{class:cls, user_id:uid}); msg.innerHTML='<span style="color:var(--success)">✓ Assigned</span>'; setTimeout(()=>{ closeModal(); renderClasses(); },700); }catch(e){ msg.textContent=e.message; }
+}
 
 // EXAMS & RESULTS
 async function renderExams(){
@@ -2478,7 +2649,7 @@ function renderBackup(){
     <div class="card"><h4><i class="ri-shield-keyhole-line"></i> Backup & Data Security</h4><p class="muted" style="margin:8px 0">Database is SQLite file at <code>data/school.db</code>. On Render, add a Disk for persistence.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button class="btn btn-sm" onclick="backupDB()"><i class="ri-download-line"></i> Download Backup (.db)</button><button class="btn btn-sm btn-outline" onclick="alert('To restore: upload your .db to data/school.db on server and restart. For Render, use SFTP or redeploy with file.')">Restore Data</button><button class="btn btn-sm btn-outline" onclick="navigate('roles')"><i class="ri-shield-user-line"></i> View Roles</button></div>
       <div class="alert alert-info" style="margin-top:12px"><b>Role-Based Access:</b> 7 roles (admin/headteacher/teacher/class_teacher/subject_teacher/bursar/nurse) enforced on frontend + backend (403 if forbidden). See <b>Roles & Permissions</b>.</div>
-      <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>headteacher</option><option>teacher</option><option>class_teacher</option><option>subject_teacher</option><option>bursar</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
+      <h4 style="margin-top:14px">Create User Account</h4><div class="form-grid" style="margin-top:8px"><div><label>Username</label><input id="u_user" class="input"></div><div><label>Password</label><input id="u_pass" class="input" value="123456"></div><div><label>Role</label><select id="u_role" class="input"><option>admin</option><option>headteacher</option><option>dos</option><option>teacher</option><option>class_teacher</option><option>subject_teacher</option><option>bursar</option><option>nurse</option></select></div><div><label>Name</label><input id="u_name" class="input"></div><div><button class="btn btn-sm" onclick="createUser()">Create User</button></div></div><div id="uMsg" style="margin-top:8px"></div>
       <div class="alert" style="margin-top:10px; background:#fefce8; border:1px solid #fde68a; color:#92400e;"><b>Permanent Backup Link:</b><br><code style="font-size:10px; word-break:break-all;">${location.origin}/api/backup?key=educontrol-permanent-2026</code><br><span style="font-size:11px;">Never expires - bookmark for automated backups.</span></div>
     </div>
     <div class="card">
@@ -2680,7 +2851,7 @@ function editUser(id, username, role, name, email){
     <div class="alert alert-info" style="margin-top:8px; font-size:11px;">As <b>admin</b> you can change role, name, email, or reset password. Username can be changed but must stay unique.</div>
     <div class="form-grid" style="margin-top:12px;">
       <div><label>Username</label><input id="eu_user" class="input" value="${username}" ${username==='admin'?'disabled':''}></div>
-      <div><label>Role</label><select id="eu_role" class="input" ${username==='admin'?'disabled':''}><option ${role==='admin'?'selected':''}>admin</option><option ${role==='headteacher'?'selected':''}>headteacher</option><option ${role==='teacher'?'selected':''}>teacher</option><option ${role==='class_teacher'?'selected':''}>class_teacher</option><option ${role==='subject_teacher'?'selected':''}>subject_teacher</option><option ${role==='bursar'?'selected':''}>bursar</option><option ${role==='nurse'?'selected':''}>nurse</option></select></div>
+      <div><label>Role</label><select id="eu_role" class="input" ${username==='admin'?'disabled':''}><option ${role==='admin'?'selected':''}>admin</option><option ${role==='headteacher'?'selected':''}>headteacher</option><option ${role==='dos'?'selected':''}>dos</option><option ${role==='teacher'?'selected':''}>teacher</option><option ${role==='class_teacher'?'selected':''}>class_teacher</option><option ${role==='subject_teacher'?'selected':''}>subject_teacher</option><option ${role==='bursar'?'selected':''}>bursar</option><option ${role==='nurse'?'selected':''}>nurse</option></select></div>
       <div><label>Name</label><input id="eu_name" class="input" value="${name||''}"></div>
       <div><label>Email</label><input id="eu_email" class="input" value="${email||''}" placeholder="optional"></div>
       <div class="full"><label>New Password (leave blank to keep)</label><input id="eu_pass" type="password" class="input" placeholder="••••••••"></div>
