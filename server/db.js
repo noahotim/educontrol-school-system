@@ -456,6 +456,14 @@ function init(){
     const allNeeded=['P1','P2','P3','P4','P5','P6','P7','S1','S2','S3','S4','S5','S6','Baby Class','Middle Class','Top Class'];
     allNeeded.forEach(n=>{ try{ db.prepare('INSERT OR IGNORE INTO classes (name,capacity) VALUES (?,?)').run(n,40); }catch(e){} });
   }catch(e){ console.log('scalable settings',e.message); }
+  // Ensure streams now that classes exist (seed A/B per class if streams empty)
+  try{
+    if(db.prepare('SELECT COUNT(*) as n FROM streams').get().n===0){
+      const cls=db.prepare('SELECT id, name FROM classes').all();
+      cls.forEach(cl=>{ ['A','B'].forEach(s=> { try{ db.prepare('INSERT OR IGNORE INTO streams (class_id,name,capacity) VALUES (?,?,?)').run(cl.id,s,40); }catch(e){} }); });
+      console.log('Seeded A/B streams for', cls.length, 'classes');
+    }
+  }catch(e){ console.log('streams seed', e.message); }
 }
 init();
 module.exports = db;
