@@ -807,13 +807,16 @@ function previewPhoto(input, previewId){
 async function uploadPhoto(fileInput, studentId, staffId){
   const file=fileInput.files[0];
   if(!file) return null;
+  if(file.size>2*1024*1024) throw new Error('Photo too large (max 2MB)');
   const fd=new FormData();
   fd.append('photo', file);
   if(studentId) fd.append('student_id', studentId);
   if(staffId) fd.append('staff_id', staffId);
   const r=await fetch('/api/upload/photo', {method:'POST', headers:{'Authorization':'Bearer '+token}, body: fd});
-  const j=await r.json();
-  if(!r.ok) throw new Error(j.error||'Upload failed');
+  const text=await r.text();
+  let j={};
+  try{ j=text? JSON.parse(text): {}; }catch(e){ j={error:'Server returned an unexpected response (photo not saved)'}; }
+  if(!r.ok) throw new Error(j.error||'Photo upload failed ('+r.status+')');
   return j.url;
 }
 // === POINT 1+2: Rich Student Modal, Detail View, Enhanced List ===

@@ -20,7 +20,7 @@ const multer=require('multer');
 const uploadDir=path.join(__dirname,'../public/uploads');
 fs.mkdirSync(uploadDir,{recursive:true});
 const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadDir), filename:(req,file,cb)=>{ const ext=path.extname(file.originalname)||'.jpg'; cb(null, Date.now()+'_'+Math.random().toString(36).slice(2,6)+ext); }});
-const upload=multer({storage, limits:{fileSize:2*1024*1024}, fileFilter:(req,file,cb)=>{ if(!file.mimetype.startsWith('image/')) return cb(new Error('Only images')); cb(null,null); }});
+const upload=multer({storage, limits:{fileSize:2*1024*1024}, fileFilter:(req,file,cb)=>{ if(!/^image\//.test(file.mimetype)) return cb(new Error('Photo must be an image file (JPG/PNG/HEIC)')); cb(null,true); }});
 app.use('/uploads', express.static(uploadDir));
 app.post('/api/upload/photo', verify, authorize('students','staff','*'), upload.single('photo'), (req,res)=>{
   if(!req.file) return res.status(400).json({error:'No file'});
@@ -1036,4 +1036,14 @@ app.get('/api/reports/balance-sheet', verify, authorize('reports:read'), (req,re
 app.use(express.static(path.join(__dirname,'../public')));
 app.get('*', (req,res)=> res.sendFile(path.join(__dirname,'../public/index.html')));
 
+// JSON error handler — return clean JSON instead of Express HTML pages for bad uploads/multer errors
+app.use((err,req,res,next)=>{
+  if(!err) return next();
+  if(err.code==='LIMIT_FILE_SIZE'){
+    const maxMB=/\/api\/upload\/document/.test(req.originalUrl||'')? 10 : 2;
+    return res.status(413).json({error:`File too large (max ${maxMB}MB)`});
+  }
+  const status=err.statusCode&&err.statusCode<500? err.statusCode : 400;
+  res.status(status).json({error: err.message||'Upload failed'});
+});
 app.listen(PORT, ()=> console.log(`EduControl running on http://localhost:${PORT} | Admin: admin / admin123`));
