@@ -68,8 +68,48 @@ function maintenanceGuard(req,res,next){
   let m=null;
   try{ m=maintenanceNow(); }catch(e){ return next(); }
   if(!m || !m.enabled) return next();
-  // Health/public endpoints stay reachable so the login page + parent portal can render
-  if(req.path==='/api/maintenance/status' || req.path==='/verify' || req.path==='/api/verify-student') return next();
+  // (1) NON-API requests ALWAYS render: login page (index.html), ALL static assets (css/js/fonts/images/..),
+  //     progressify + parent-portal pages, /verify-student. The UI must ALWAYS load so a logged-out admin
+  //     can still see the login page and get back in to switch maintenance OFF. Filter: NOT /api/*
+  if(!req.path.startsWith('/api/')) return next();
+  // (2) Public + auth trio ALWAYS reachable (health check, me, logout) so the SPA can render + log back out.
+  if(req.path==='/api/maintenance/status' || req.path==='/api/me' || req.path==='/api/logout') return next();
+  // (3) Login: ONLY admin-role accounts may authenticate while maintenance is on
+  if(req.path==='/api/login'){
+    const {username}=req.body||{};
+    if(username){
+      try{
+        const u=db.prepare('SELECT role FROM users WHERE username=?').get(username);
+        if(u && u.role==='admin') return next();
+      }catch(e){}
+    }
+    return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
+  }
+  // (4) Everything else: a real admin session (DB-verified) is required
+  if(adminTokenOk(req)) return next();
+  return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
+}
+
+function adminTokenOk(req){
+  const h=req.headers.authorization;
+  let tok=null;
+  if(h && h.startsWith('Bearer ')) tok=h.slice(7);
+  else if(req.query && req.query.token) tok=req.query.token;
+  if(!tok) return false;
+  try{
+    const decoded=jwt.verify(tok, SECRET);
+    const u=db.prepare('SELECT role FROM users WHERE id=?').get(decoded.id);
+    return !!(u && u.role==='admin');
+  }catch(e){ return false; }
+}
+function maintenanceGuard(req,res,next){
+  let m=null;
+  try{ m=maintenanceNow(); }catch(e){ return next(); }
+  if(!m || !m.enabled) return next();
+  // Login page + ALL static assets always render so the UI loads — admin can always get back in to switch maintenance OFF
+  if(!req.path.startsWith('/api/')) return next();
+  // Public/health + auth endpoints stay reachable (status check, admin verify/login, me, logout)
+  if(req.path==='/api/maintenance/status' || req.path==='/verify' || req.path==='/api/verify-student' || req.path==='/api/me' || req.path==='/api/logout') return next();
   // Login: ONLY admin-role accounts may authenticate while maintenance is on
   if(req.path==='/api/login'){
     const {username}=req.body||{};
@@ -1113,9 +1153,10 @@ app.get('/api/exams', verify, authorize('exams:read','exams'), (req,res)=>{
 });
 // CREATE exam (multi-class/stream/subjects)
 app.post('/api/exams', verify, authorize('exams'), (req,res)=>{
-  const {name,exam_type,term,year,date,classes,streams,subjects,max_marks,pass_mark,weight_percent}=req.body;
+  const {name,exam_type,term,year,date,classes,class:cls,streams,subjects,max_marks,pass_mark,weight_percent}=req.body;
   if(!name) return res.status(400).json({error:'Exam name required'});
-  const classList=(Array.isArray(classes)?classes:[classes]).filter(Boolean).map(Number);
+  const rawClasses=Array.isArray(classes)||classes?classes:[cls];
+  const classList=(Array.isArray(rawClasses)?rawClasses:[rawClasses]).filter(Boolean).map(Number);
   if(!classList.length) return res.status(400).json({error:'Select at least one class'});
   const firstName=db.prepare('SELECT name FROM classes WHERE id=?').get(classList[0]);
   try{
