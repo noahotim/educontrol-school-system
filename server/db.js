@@ -262,14 +262,6 @@ function init(){
     status TEXT DEFAULT 'Paid',
     UNIQUE(staff_id, month)
   );
-  CREATE TABLE IF NOT EXISTS promotions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student_id INTEGER REFERENCES students(id),
-    from_class TEXT,
-    to_class TEXT,
-    year TEXT,
-    date TEXT
-  );
   CREATE TABLE IF NOT EXISTS teacher_assignments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -277,10 +269,21 @@ function init(){
     class TEXT NOT NULL,
     UNIQUE(user_id, subject, class)
   );
-  CREATE TABLE IF NOT EXISTS class_teachers (
+   CREATE TABLE IF NOT EXISTS class_teachers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     class TEXT UNIQUE NOT NULL,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    from_class TEXT NOT NULL,
+    to_class TEXT,
+    year TEXT,
+    term TEXT DEFAULT 'Term III',
+    average REAL,
+    recommendation TEXT,
+    date TEXT DEFAULT (datetime('now'))
   );
   CREATE TABLE IF NOT EXISTS promotions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -305,7 +308,91 @@ function init(){
     compiled_at TEXT DEFAULT (datetime('now')),
     UNIQUE(exam_id, student_id)
   );
+  -- Richer Student Profile — POINT 1
+  CREATE TABLE IF NOT EXISTS student_guardians (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    relationship TEXT NOT NULL,
+    full_name TEXT NOT NULL,
+    phone TEXT,
+    whatsapp TEXT,
+    email TEXT,
+    occupation TEXT,
+    address TEXT,
+    is_primary INTEGER DEFAULT 0,
+    is_emergency INTEGER DEFAULT 0,
+    can_pickup INTEGER DEFAULT 1,
+    notes TEXT
+  );
+  CREATE TABLE IF NOT EXISTS student_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    doc_type TEXT,
+    file_url TEXT NOT NULL,
+    file_name TEXT,
+    uploaded_at TEXT DEFAULT (datetime('now')),
+    expiry_date TEXT,
+    notes TEXT
+  );
+  CREATE TABLE IF NOT EXISTS student_siblings (
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    sibling_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    PRIMARY KEY (student_id, sibling_id)
+  );
+  CREATE TABLE IF NOT EXISTS houses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    colour TEXT,
+    motto TEXT
+  );
+  CREATE TABLE IF NOT EXISTS streams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    capacity INTEGER,
+    class_teacher_id INTEGER REFERENCES users(id),
+    UNIQUE(class_id, name)
+  );
+  CREATE TABLE IF NOT EXISTS student_placements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    class_id INTEGER REFERENCES classes(id),
+    stream_id INTEGER REFERENCES streams(id),
+    house_id INTEGER REFERENCES houses(id),
+    academic_year TEXT,
+    term TEXT,
+    is_current INTEGER DEFAULT 1,
+    promoted_from INTEGER REFERENCES student_placements(id),
+    promotion_type TEXT,
+    notes TEXT,
+    start_date TEXT,
+    end_date TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
   `);
+  // Migrate students — add richer columns (safe, ignore if exists)
+  const _cols=[['date_of_birth','TEXT'],['academic_year','TEXT'],['term','TEXT'],['middle_name','TEXT'],['preferred_name','TEXT'],['place_of_birth','TEXT'],['nationality','TEXT'],['religion','TEXT'],['blood_group','TEXT'],['home_language','TEXT'],['address_line1','TEXT'],['address_line2','TEXT'],['city','TEXT'],['district','TEXT'],['country','TEXT DEFAULT \'Uganda\''],['status_reason','TEXT'],['status_changed_at','TEXT'],['previous_school','TEXT'],['previous_class','TEXT'],['transfer_reason','TEXT'],['special_needs','TEXT'],['allergies','TEXT'],['medical_notes','TEXT'],['photo_url','TEXT'],['updated_at','TEXT'],['created_by','INTEGER'],['updated_by','INTEGER'],['deleted_at','TEXT']];
+  _cols.forEach(([c,t])=>{ try{ db.exec(`ALTER TABLE students ADD COLUMN ${c} ${t}`); }catch(e){} });
+  // Migrate classes
+  [['level_order','INTEGER'],['is_active','INTEGER DEFAULT 1']].forEach(([c,t])=>{ try{ db.exec(`ALTER TABLE classes ADD COLUMN ${c} ${t}`); }catch(e){} });
+  // Backfill level_order
+  try{
+    const order={'Baby Class':0,'Middle Class':1,'Top Class':2,'P1':3,'P2':4,'P3':5,'P4':6,'P5':7,'P6':8,'P7':9,'S1':10,'S2':11,'S3':12,'S4':13,'S5':14,'S6':15};
+    Object.entries(order).forEach(([n,o])=> db.prepare('UPDATE classes SET level_order=? WHERE name=?').run(o,n));
+  }catch(e){}
+  // Seed houses if empty
+  try{
+    if(db.prepare('SELECT COUNT(*) as n FROM houses').get().n===0){
+      [['Blue','blue','Knowledge'],['Red','red','Courage'],['Green','green','Growth'],['Yellow','yellow','Light']].forEach(([n,c,m])=> db.prepare('INSERT INTO houses (name,colour,motto) VALUES (?,?,?)').run(n,c,m));
+    }
+  }catch(e){}
+  // Seed streams for each class if empty
+  try{
+    if(db.prepare('SELECT COUNT(*) as n FROM streams').get().n===0){
+      const cls=db.prepare('SELECT id, name FROM classes').all();
+      cls.forEach(cl=>{ ['A','B'].forEach(s=> { try{ db.prepare('INSERT OR IGNORE INTO streams (class_id,name,capacity) VALUES (?,?,?)').run(cl.id,s,40); }catch(e){} }); });
+    }
+  }catch(e){}
   // ensure admin user
   const row = db.prepare('SELECT id FROM users WHERE username=?').get('admin');
   if(!row){

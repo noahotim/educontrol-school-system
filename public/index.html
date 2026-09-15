@@ -690,35 +690,12 @@ async function renderStudents(){
   try{ students=await apiGet('/api/students'); } catch(e){ $('#content').innerHTML=`<div class="card" style="text-align:center; padding:30px;"><i class="ri-lock-2-line" style="font-size:32px; color:var(--danger)"></i><h4>Access Denied</h4><p class="muted">${e.message}</p></div>`; return; }
   try{ classes=await apiGet('/api/classes'); }catch(e){ classes=[]; }
   try{ school=await fetch('/api/settings/school').then(r=>r.json()); }catch(e){}
-  // Filter students by active level: primary → P1-P7 only, secondary → S1-S6 only, combined → all
-  const activeSet=new Set(school.activeClasses||[]);
-  const levelFiltered=students.filter(s=> activeSet.has(s.class));
-  const filteredCount=levelFiltered.length;
-  const hiddenCount=students.length-filteredCount;
-  students=levelFiltered;
-  const canWrite = canAccess('students');
-  const canID = canAccess('students:read');
-  const levelBanner = hiddenCount ? `<div class="alert" style="background:#e0f2fe; border:1px solid #7dd3fc; color:#0c4a6e; font-size:11px; margin-bottom:8px;"><b>${school.level.toUpperCase()} mode:</b> Showing <b>${filteredCount}</b> students in active classes <b>${[...activeSet].join(', ')}</b>. <b>${hiddenCount}</b> from other level hidden. Switch level in <b>Backup → Scalability</b> to see them. <button class="btn btn-sm btn-outline" style="padding:2px 6px; font-size:10px; margin-left:6px;" onclick="showAllStudentsTemp()">Show all ${students.length+hiddenCount}</button></div>` : `<div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; font-size:11px; margin-bottom:8px;"><b>${school.level.toUpperCase()}:</b> Active <b>${[...activeSet].join(', ')}</b> — ${filteredCount} students shown.</div>`;
-  $('#content').innerHTML=`
-  ${levelBanner}
-  <div class="toolbar" style="flex-wrap:wrap;">
-    <div class="search"><i class="ri-search-line"></i><input id="stuQ" placeholder="Search name, admission no, class..." oninput="filterStudents()"></div>
-    ${canWrite?`<button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit Student</button>`:``}
-    ${canWrite?`<button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="openImportRegistrationModal()"><i class="ri-upload-2-line"></i> Import Registration List</button>`:``}
-    <button class="btn btn-sm btn-outline" onclick="exportStudentsCSV()">Export CSV</button>
-    ${canID?`<button class="btn btn-sm btn-outline" onclick="previewStudentsPDF()"><i class="ri-download-line"></i> List Preview</button><button class="btn btn-sm btn-outline" onclick="previewAllStudentCards()"><i class="ri-contacts-line"></i> ID Cards Preview</button>`:``}
-  </div>
-  <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th>Actions</th></tr></thead><tbody id="stuBody">${students.map(s=>`<tr data-q="${(s.first_name+' '+s.last_name+' '+s.admission_no+' '+s.class).toLowerCase()}"><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b><div class="muted" style="font-size:11px">${s.dob||''}</div></td><td><span class="badge badge-blue">${s.class||'-'}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td style="display:flex; gap:4px; flex-wrap:wrap;">${canID?`<button class="btn btn-sm" style="padding:4px 8px; font-size:11px; background:#0f172a;" onclick="previewStudentCard(${s.id})"><i class="ri-id-card-line"></i> ID Preview</button>`:``}${canWrite?`<button class="btn btn-sm btn-outline" style="padding:4px 8px;" onclick="openStudentModal(${s.id})">Edit</button> <button class="btn btn-sm btn-danger" style="padding:4px 8px;" onclick="delStudent(${s.id})">Del</button>`: `<span class="muted" style="font-size:11px; align-self:center;">View only</span>`}</td></tr>`).join('')}</tbody></table></div>
-  <div class="muted" style="margin-top:8px">${students.length} students ${classes.length?`| Classes: ${classes.map(c=>c.name).join(', ')}`:``} ${!canWrite?`<span class="badge badge-amber" style="margin-left:6px;">Bursar: View only — no edit/delete</span>`:``}</div>
-  <div id="studentCardPreview" style="margin-top:16px;"></div>`;
+  await _loadFormData();
+  renderStudentsList(students, classes, canAccess('students'), canAccess('students:read'), school);
 }
 async function showAllStudentsTemp(){
-  // Bypass level filter — show all students regardless of primary/secondary
   let students=[]; try{ students=await apiGet('/api/students'); }catch(e){ return; }
-  const canWrite=canAccess('students'); const canID=canAccess('students:read');
-  $('#content').innerHTML=`<div class="alert" style="background:#fef3c7; border:1px solid #fde68a; color:#92400e; font-size:11px; margin-bottom:8px;"><b>Showing ALL levels</b> — ${students.length} students (primary + secondary). <button class="btn btn-sm btn-outline" style="padding:2px 6px; font-size:10px; margin-left:6px;" onclick="renderStudents()">Back to ${(() => { try{ const s=JSON.parse(localStorage.getItem('schoolLevel')||'{}'); return s.level||'primary'; }catch(e){ return 'primary'; } })()} filter</button></div>
-  <div class="toolbar" style="flex-wrap:wrap;"><div class="search"><i class="ri-search-line"></i><input id="stuQ" placeholder="Search name, admission no, class..." oninput="filterStudents()"></div>${canWrite?`<button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit Student</button>`:``}${canWrite?`<button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="openImportRegistrationModal()"><i class="ri-upload-2-line"></i> Import Registration List</button>`:``}<button class="btn btn-sm btn-outline" onclick="exportStudentsCSV()">Export CSV</button>${canID?`<button class="btn btn-sm btn-outline" onclick="previewStudentsPDF()"><i class="ri-download-line"></i> List Preview</button><button class="btn btn-sm btn-outline" onclick="previewAllStudentCards()"><i class="ri-contacts-line"></i> ID Cards Preview</button>`:``}</div>
-  <div class="table-wrap"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Gender</th><th>Parent Phone</th><th>Status</th><th>Actions</th></tr></thead><tbody>${students.map(s=>`<tr><td><b>${s.admission_no}</b></td><td><b>${s.first_name} ${s.last_name}</b></td><td><span class="badge badge-blue">${s.class}</span></td><td>${s.gender||'-'}</td><td>${s.parent_phone||'-'}</td><td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td><td>${canID?`<button class="btn btn-sm" style="padding:4px 8px; font-size:11px; background:#0f172a;" onclick="previewStudentCard(${s.id})">ID Preview</button>`:``}</td></tr>`).join('')}</tbody></table></div>`;
+  renderStudentsList(students, [], canAccess('students'), canAccess('students:read'), {level:'all', activeClasses:[]}, true);
 }
 function studentCardHTML(s){
   // QR now encodes verification card URL (well-designed): scan opens /verify card with Reg/Perf/Fees
@@ -737,7 +714,7 @@ function studentCardHTML(s){
       <div><div style="font-size:11px; font-weight:800; color:#0f172a; line-height:1.1;">${s.first_name} ${s.last_name}</div><div style="font-size:8px; color:#1e40af; font-weight:700; margin-top:2px;">${s.class||'-'} • ${s.gender||''} • ${s.dob||''}</div><div style="margin-top:6px; font-size:7.5px; color:#334155; line-height:1.4;"><div><span class="muted">Adm:</span> <b>${s.admission_no}</b> • <span class="muted">DOB:</span> ${s.dob||'-'}</div><div><span class="muted">Parent:</span> ${s.parent_name||'-'}</div><div><span class="muted">Phone:</span> <b>${s.parent_phone||'-'}</b></div><div><span class="muted">Addr:</span> ${(s.address||'-').slice(0,28)}</div></div></div>
       <div style="display:flex; justify-content:space-between; align-items:end; border-top:1px dashed #e2e8f0; padding-top:6px;"><div style="font-size:6px; color:#94a3b8;">Valid ${new Date().getFullYear()}-${new Date().getFullYear()+1}<br><b style="color:#0f172a;">${s.status}</b></div><div style="text-align:center;"><div style="width:48px; height:20px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:5px; color:#94a3b8;">QR Login</div><div style="width:50px; border-top:1px solid #0f172a; margin-top:3px; font-size:6px; color:#64748b; text-align:center;">Head Teacher</div></div></div>
     </div>
-  </div>`;
+</div>`;
 }
 function studentProfileHTML(s){
   const verifyUrl = `https://educontrol-gif2.onrender.com/verify?adm=${s.admission_no}`;
@@ -819,30 +796,6 @@ async function previewAllStudentCards(){
   openModal(`<h3><i class="ri-contacts-line"></i> ID Cards — Preview (A4, 8 per page)</h3><div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; font-size:11px; margin-top:8px;">Preview 4 of ${students.length} cards • QR now encodes full profile (scan → Reg • Class • Performance • Fees balance). Download gives A4 PDF (12 cards max, 8 per page).</div><div style="max-height:60vh; overflow:auto; background:#e2e8f0; padding:12px; border-radius:8px; margin-top:8px; display:grid; gap:10px; justify-items:center;">${preview}</div><div style="display:flex; gap:8px; margin-top:12px;"><button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="downloadAllStudentCardsPDF()"><i class="ri-download-line"></i> Download Full PDF</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Close</button></div>`);
 }
 function filterStudents(){ const q=$('#stuQ').value.toLowerCase(); document.querySelectorAll('#stuBody tr').forEach(tr=> tr.style.display = tr.dataset.q.includes(q)?'':'none'); }
-function openStudentModal(id){
-  const isEdit=!!id;
-  const load = isEdit? apiGet('/api/students/'+id) : Promise.resolve({});
-  load.then(s=>{
-    const photo = s.photo ? `<img src="${s.photo}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;">` : `<div style="width:80px;height:80px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;"><i class="ri-user-3-line" style="font-size:28px;"></i></div>`;
-    const canPhoto = user.role==='admin' || user.role==='headteacher';
-    openModal(`<h3>${isEdit?'Edit':'Admit'} Student</h3>
-    <div style="display:flex; gap:16px; align-items:center; margin:12px 0; padding:10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px;">
-      ${photo}
-      <div style="flex:1;"><div style="font-weight:700;">${s.first_name? s.first_name+' '+s.last_name : 'New Student'}</div><div class="muted" style="font-size:11px;">${s.admission_no||'Auto Adm No'}</div>${canPhoto?`<label class="btn btn-sm btn-outline" style="margin-top:6px; display:inline-block; cursor:pointer;"><i class="ri-camera-line"></i> ${s.photo?'Change':'Upload'} Photo<input type="file" id="f_photo" accept="image/*" style="display:none;" onchange="previewPhoto(this,'photoPreview')"></label> <span class="muted" style="font-size:10px;">Admin/headteacher only • JPG/PNG ≤2MB</span>`: `<span class="muted" style="font-size:11px;">Photo by admin only</span>`}<div id="photoPreview" style="margin-top:6px;"></div></div>
-    </div>
-    <div class="form-grid" style="margin-top:12px">
-      <div><label>First Name*</label><input id="f_first" class="input" value="${s.first_name||''}"></div>
-      <div><label>Last Name*</label><input id="f_last" class="input" value="${s.last_name||''}"></div>
-      <div><label>Admission No</label><input id="f_adm" class="input" value="${s.admission_no||''}" placeholder="Auto"></div>
-      <div><label>Class</label><input id="f_class" class="input" value="${s.class||''}" placeholder="P5"></div>
-      <div><label>Gender</label><select id="f_gender" class="input"><option ${s.gender==='Male'?'selected':''}>Male</option><option ${s.gender==='Female'?'selected':''}>Female</option></select></div>
-      <div><label>DOB</label><input id="f_dob" type="date" class="input" value="${s.dob||''}"></div>
-      <div><label>Parent Name</label><input id="f_parent" class="input" value="${s.parent_name||''}"></div>
-      <div><label>Parent Phone</label><input id="f_phone" class="input" value="${s.parent_phone||''}"></div>
-      <div class="full"><label>Address</label><input id="f_addr" class="input" value="${s.address||''}"></div>
-    </div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="saveStudent(${id||0})">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
-  });
-}
 function previewPhoto(input, previewId){
   const file=input.files[0];
   if(!file) return;
@@ -863,44 +816,360 @@ async function uploadPhoto(fileInput, studentId, staffId){
   if(!r.ok) throw new Error(j.error||'Upload failed');
   return j.url;
 }
+// === POINT 1+2: Rich Student Modal, Detail View, Enhanced List ===
+// Houses/streams cache for forms
+let _housesCache=[], _streamsCache=[], _classesCache=[];
+async function _loadFormData(){
+  try{ _housesCache=await apiGet('/api/houses'); }catch(e){_housesCache=[];}
+  try{ _streamsCache=await apiGet('/api/streams'); }catch(e){_streamsCache=[];}
+  try{ _classesCache=await apiGet('/api/classes'); }catch(e){_classesCache=[];}
+}
+function _houseOpts(selected){
+  return `<option value="">None</option>`+_housesCache.map(h=>`<option value="${h.id}" ${h.id==selected?'selected':''}>${h.name}${h.colour?' ('+h.colour+')':''}</option>`).join('');
+}
+function _classOpts(selected){
+  return `<option value="">Select class</option>`+_classesCache.map(c=>`<option value="${c.id}" ${c.id==selected?'selected':''}>${c.name}</option>`).join('');
+}
+function _streamOptsForClass(classId, selected){
+  const streams=_streamsCache.filter(s=>s.class_id==classId);
+  return `<option value="">None</option>`+streams.map(s=>`<option value="${s.id}" ${s.id==selected?'selected':''}>${s.name}</option>`).join('');
+}
+function _guardianRow(g,i){
+  return `<div class="guardian-row" data-idx="${i}" style="border:1px solid #e2e8f0; border-radius:8px; padding:10px; margin-bottom:8px; background:#fafbfc;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;"><b style="font-size:12px;">Guardian ${i+1}</b> <button class="btn btn-sm btn-danger" style="padding:2px 6px; font-size:10px;" onclick="this.closest('.guardian-row').remove()"><i class="ri-delete-bin-line"></i></button></div>
+    <div class="form-grid-3">
+      <div><label>Relationship</label><select class="input g_rel"><option ${(g.relationship||'')==='Parent'?'selected':''}>Parent</option><option ${(g.relationship||'')==='Guardian'?'selected':''}>Guardian</option><option ${(g.relationship||'')==='Uncle'?'selected':''}>Uncle</option><option ${(g.relationship||'')==='Aunt'?'selected':''}>Aunt</option><option ${(g.relationship||'')==='Sibling'?'selected':''}>Sibling</option><option ${(g.relationship||'')==='Other'?'selected':''}>Other</option></select></div>
+      <div><label>Full Name*</label><input class="input g_name" value="${g.full_name||''}"></div>
+      <div><label>Phone</label><input class="input g_phone" value="${g.phone||''}"></div>
+      <div><label>WhatsApp</label><input class="input g_wa" value="${g.whatsapp||''}"></div>
+      <div><label>Email</label><input class="input g_email" value="${g.email||''}"></div>
+      <div><label>Occupation</label><input class="input g_occ" value="${g.occupation||''}"></div>
+      <div><label>Address</label><input class="input g_addr" value="${g.address||''}"></div>
+      <div style="display:flex; gap:10px; align-items:end; padding-bottom:2px;">
+        <label style="white-space:nowrap; margin:0;"><input type="checkbox" class="g_primary" ${g.is_primary?'checked':''}> Primary</label>
+        <label style="white-space:nowrap; margin:0;"><input type="checkbox" class="g_emergency" ${g.is_emergency?'checked':''}> Emergency</label>
+        <label style="white-space:nowrap; margin:0;"><input type="checkbox" class="g_pickup" ${g.can_pickup!==false?'checked':''}> Can Pick Up</label>
+      </div>
+    </div>
+    <div style="margin-top:4px;"><label>Notes</label><input class="input g_notes" value="${g.notes||''}" placeholder="e.g. lives with this guardian"></div>
+  </div>`;
+}
+function _collectGuardians(){
+  const rows=document.querySelectorAll('.guardian-row');
+  return [...rows].map(r=>({relationship:r.querySelector('.g_rel').value, full_name:r.querySelector('.g_name').value, phone:r.querySelector('.g_phone').value, whatsapp:r.querySelector('.g_wa').value, email:r.querySelector('.g_email').value, occupation:r.querySelector('.g_occ').value, address:r.querySelector('.g_addr').value, is_primary:r.querySelector('.g_primary').checked, is_emergency:r.querySelector('.g_emergency').checked, can_pickup:r.querySelector('.g_pickup').checked, notes:r.querySelector('.g_notes').value})).filter(g=>g.full_name);
+}
+
+function openStudentModal(id){
+  const isEdit=!!id;
+  const load=isEdit? apiGet('/api/students/'+id) : Promise.resolve({status:'Active', gender:'Male', nationality:'Ugandan', religion:'Christian'});
+  Promise.all([load, _loadFormData()]).then(async ([s,_])=>{
+    const photo=s.photo_url||s.photo;
+    const photoHtml=photo?`<img src="${photo}" id="photoDisp" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #e2e8f0;">`:`<div id="photoDisp" style="width:80px;height:80px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;"><i class="ri-user-3-line" style="font-size:28px;"></i></div>`;
+    const guardians=Array.isArray(s.guardians)?s.guardians:[]; 
+    // Determine current placement
+    let curClassId='', curStreamId='', curHouseId='';
+    if(s.currentPlacement){ curClassId=s.currentPlacement.class_id; curStreamId=s.currentPlacement.stream_id||''; curHouseId=s.currentPlacement.house_id||''; }
+    else if(s.class){ const c=_classesCache.find(x=>x.name===s.class); if(c) curClassId=c.id; }
+
+    const tabs=['Photo & Identity','Contact & Address','Guardians','Academic','Medical','Documents','Status'];
+    const tabBtns=tabs.map((t,i)=>`<button class="btn btn-sm ${i===0?'tab-btn active-tab':'tab-btn'}" onclick="switchStudentTab(${i})" data-tab="${i}">${t}</button>`).join('');
+
+    openModal(`<h3>${isEdit?'Edit':'Admit'} Student</h3>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;">${tabBtns}</div>
+    <!-- TAB 0: Photo & Identity -->
+    <div class="stu-tab" data-tab="0" style="display:block;">
+      <div style="display:flex;gap:16px;align-items:center;margin-bottom:12px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
+        ${photoHtml}
+        <div style="flex:1;"><div style="font-weight:700;">${s.first_name? s.first_name+' '+s.last_name:'New Student'}</div><div class="muted" style="font-size:11px;">${s.admission_no||'Auto'}</div>
+        <label class="btn btn-sm btn-outline" style="margin-top:6px;display:inline-block;cursor:pointer;"><i class="ri-camera-line"></i> ${photo?'Change':'Upload'} Photo<input type="file" id="f_photo" accept="image/*" style="display:none;" onchange="previewPhoto(this,'photoPreview')"></label>
+        <div id="photoPreview"></div></div>
+      </div>
+      <div class="form-grid">
+        <div><label>First Name*</label><input id="f_first" class="input" value="${s.first_name||''}"></div>
+        <div><label>Middle Name</label><input id="f_middle" class="input" value="${s.middle_name||''}"></div>
+        <div><label>Last Name*</label><input id="f_last" class="input" value="${s.last_name||''}"></div>
+        <div><label>Preferred Name</label><input id="f_prefname" class="input" value="${s.preferred_name||''}"></div>
+        <div><label>Gender</label><select id="f_gender" class="input"><option ${s.gender==='Male'?'selected':''}>Male</option><option ${s.gender==='Female'?'selected':''}>Female</option></select></div>
+        <div><label>Admission No</label><input id="f_adm" class="input" value="${s.admission_no||''}" placeholder="Auto"></div>
+        <div><label>Date of Birth</label><input id="f_dob" type="date" class="input" value="${s.date_of_birth||s.dob||''}"></div>
+        <div><label>Place of Birth</label><input id="f_pob" class="input" value="${s.place_of_birth||''}"></div>
+        <div><label>Nationality</label><input id="f_nat" class="input" value="${s.nationality||'Ugandan'}"></div>
+        <div><label>Religion</label><input id="f_religion" class="input" value="${s.religion||''}"></div>
+        <div><label>Blood Group</label><select id="f_blood" class="input"><option value="">Unknown</option><option ${s.blood_group==='A+'?'selected':''}>A+</option><option ${s.blood_group==='A-'?'selected':''}>A-</option><option ${s.blood_group==='B+'?'selected':''}>B+</option><option ${s.blood_group==='B-'?'selected':''}>B-</option><option ${s.blood_group==='O+'?'selected':''}>O+</option><option ${s.blood_group==='O-'?'selected':''}>O-</option><option ${s.blood_group==='AB+'?'selected':''}>AB+</option><option ${s.blood_group==='AB-'?'selected':''}>AB-</option></select></div>
+        <div><label>Home Language</label><input id="f_lang" class="input" value="${s.home_language||''}"></div>
+      </div>
+    </div>
+    <!-- TAB 1: Contact & Address -->
+    <div class="stu-tab" data-tab="1" style="display:none;">
+      <div class="form-grid">
+        <div><label>Address Line 1</label><input id="f_addr1" class="input" value="${s.address_line1||s.address||''}"></div>
+        <div><label>Address Line 2</label><input id="f_addr2" class="input" value="${s.address_line2||''}"></div>
+        <div><label>City</label><input id="f_city" class="input" value="${s.city||''}"></div>
+        <div><label>District</label><input id="f_district" class="input" value="${s.district||''}"></div>
+        <div><label>Country</label><input id="f_country" class="input" value="${s.country||'Uganda'}"></div>
+        <div><label>Parent/Guardian Phone (Legacy)</label><input id="f_phone" class="input" value="${s.parent_phone||''}"></div>
+        <div><label>Parent/Guardian Name (Legacy)</label><input id="f_parent" class="input" value="${s.parent_name||''}"></div>
+        <div><label>Parent Email (Legacy)</label><input id="f_parent_email" class="input" value="${s.parent_email||''}"></div>
+      </div>
+    </div>
+    <!-- TAB 2: Guardians -->
+    <div class="stu-tab" data-tab="2" style="display:none;">
+      <div id="guardiansList">${guardians.length? guardians.map((g,i)=>_guardianRow(g,i)).join('') : _guardianRow({},0)}</div>
+      <button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="document.getElementById('guardiansList').insertAdjacentHTML('beforeend',${JSON.stringify(_guardianRow({},99)).replace(/'/g,"\\'")})"><i class="ri-add-line"></i> Add Guardian</button>
+    </div>
+    <!-- TAB 3: Academic Background -->
+    <div class="stu-tab" data-tab="3" style="display:none;">
+      <div class="form-grid">
+        <div><label>Class (current placement)</label><select id="f_class_id" class="input" onchange="document.getElementById('f_stream_id').innerHTML=_streamOptsForClass(this.value,'')">${_classOpts(curClassId)}</select></div>
+        <div><label>Stream</label><select id="f_stream_id" class="input">${_streamOptsForClass(curClassId, curStreamId)}</select></div>
+        <div><label>House</label><select id="f_house_id" class="input">${_houseOpts(curHouseId)}</select></div>
+        <div><label>Academic Year</label><input id="f_ayear" class="input" value="${s.academic_year||new Date().getFullYear()}" placeholder="2026"></div>
+        <div><label>Term</label><select id="f_term" class="input"><option ${s.term==='Term I'?'selected':''}>Term I</option><option ${s.term==='Term II'?'selected':''}>Term II</option><option ${s.term==='Term III'?'selected':''}>Term III</option></select></div>
+        <div><label>Admission Date</label><input id="f_admdate" type="date" class="input" value="${s.admission_date||''}"></div>
+        <div><label>Previous School</label><input id="f_prevschool" class="input" value="${s.previous_school||''}"></div>
+        <div><label>Previous Class</label><input id="f_prevclass" class="input" value="${s.previous_class||''}"></div>
+        <div class="full"><label>Transfer Reason</label><input id="f_transreason" class="input" value="${s.transfer_reason||''}"></div>
+      </div>
+    </div>
+    <!-- TAB 4: Medical -->
+    <div class="stu-tab" data-tab="4" style="display:none;">
+      <div class="form-grid">
+        <div class="full"><label>Allergies</label><input id="f_allergies" class="input" value="${s.allergies||''}" placeholder="e.g. Peanuts, Penicillin"></div>
+        <div class="full"><label>Special Needs</label><input id="f_specialneeds" class="input" value="${s.special_needs||''}" placeholder="e.g. ADHD, Dyslexia"></div>
+        <div class="full"><label>Medical Notes</label><textarea id="f_mednotes" class="input" rows="3">${s.medical_notes||''}</textarea></div>
+      </div>
+    </div>
+    <!-- TAB 5: Documents -->
+    <div class="stu-tab" data-tab="5" style="display:none;">
+      <div style="font-size:11px; color:#64748b; margin-bottom:8px;">Upload student documents (birth certificate, medical records, transfer letter, etc.)</div>
+      <div id="existingDocs">${(s.documents||[]).map(d=>`<div style="display:flex;align-items:center;gap:8px;padding:6px;background:#f8fafc;border-radius:6px;margin-bottom:4px;font-size:12px;"><i class="ri-file-text-line" style="color:#3b82f6;"></i><b>${d.doc_type}</b> — ${d.file_name||d.file_url.split('/').pop()} ${d.expiry_date?'<span class="muted">Exp: '+d.expiry_date+'</span>':''} <button class="btn btn-sm btn-danger" style="margin-left:auto;padding:2px 6px;font-size:10px;" onclick="delStudentDoc(${d.id})"><i class="ri-delete-bin-line"></i></button></div>`).join('')}</div>
+      <div id="newDocs"></div>
+      <button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="addDocRow()"><i class="ri-add-line"></i> Add Document</button>
+    </div>
+    <!-- TAB 6: Status -->
+    <div class="stu-tab" data-tab="6" style="display:none;">
+      <div class="form-grid">
+        <div><label>Status</label><select id="f_status" class="input"><option ${s.status==='Active'?'selected':''}>Active</option><option ${s.status==='Inactive'?'selected':''}>Inactive</option><option ${s.status==='Withdrawn'?'selected':''}>Withdrawn</option><option ${s.status==='Graduated'?'selected':''}>Graduated</option><option ${s.status==='Transferred'?'selected':''}>Transferred</option></select></div>
+        <div><label>Status Reason</label><input id="f_statusreason" class="input" value="${s.status_reason||''}"></div>
+      </div>
+      ${isEdit?`<div style="margin-top:12px;padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;"><b style="color:#dc2626;">Danger Zone</b><div style="margin-top:6px;display:flex;gap:8px;"><button class="btn btn-sm btn-danger" onclick="delStudent(${id})"><i class="ri-delete-bin-line"></i> Soft Delete</button> ${s.deleted_at?`<button class="btn btn-sm btn-outline" onclick="restoreStudent(${id})"><i class="ri-refresh-line"></i> Restore</button>`:''}</div></div>`:''}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;">
+      <button class="btn btn-sm" onclick="saveStudent(${id||0})"><i class="ri-save-line"></i> Save</button>
+      ${isEdit?`<button class="btn btn-sm btn-outline" onclick="viewStudent(${id})"><i class="ri-eye-line"></i> View Profile</button>`:''}
+      <button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button>
+    </div>`, '900px');
+  });
+}
+function switchStudentTab(idx){
+  document.querySelectorAll('.stu-tab').forEach(t=>t.style.display='none');
+  document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.remove('active-tab');b.style.background='';b.style.color='';});
+  const panel=document.querySelector(`.stu-tab[data-tab="${idx}"]`);
+  if(panel) panel.style.display='block';
+  const btn=document.querySelector(`.tab-btn[data-tab="${idx}"]`);
+  if(btn){ btn.classList.add('active-tab'); btn.style.background='#0f172a'; btn.style.color='#fff'; }
+}
+function addDocRow(){
+  const idx=Date.now();
+  document.getElementById('newDocs').insertAdjacentHTML('beforeend',`<div class="new-doc-row" data-idx="${idx}" style="display:flex;gap:6px;align-items:end;margin-top:6px;">
+    <div style="flex:1;"><label>Type</label><select class="input doc_type"><option>Birth Certificate</option><option>Medical Record</option><option>Transfer Letter</option><option>Immunization Card</option><option>National ID</option><option>Other</option></select></div>
+    <div style="flex:2;"><label>File</label><input type="file" class="input doc_file" accept="image/*,.pdf"></div>
+    <div style="flex:1;"><label>Expiry Date</label><input type="date" class="input doc_expiry"></div>
+    <button class="btn btn-sm btn-danger" style="padding:4px 8px;" onclick="this.closest('.new-doc-row').remove()"><i class="ri-delete-bin-line"></i></button>
+  </div>`);
+}
+async function delStudentDoc(id){ if(!confirm('Delete document?'))return; await apiDel('/api/student-documents/'+id); toast('Deleted','success'); }
+
 async function saveStudent(id){
-  const body={first_name:$('#f_first').value, last_name:$('#f_last').value, admission_no:$('#f_adm').value||undefined, class:$('#f_class').value, gender:$('#f_gender').value, dob:$('#f_dob').value, parent_name:$('#f_parent').value, parent_phone:$('#f_phone').value, address:$('#f_addr').value};
+  const body={
+    first_name:$('#f_first').value, middle_name:$('#f_middle').value, last_name:$('#f_last').value,
+    preferred_name:$('#f_prefname').value, gender:$('#f_gender').value,
+    admission_no:$('#f_adm').value||undefined, date_of_birth:$('#f_dob').value,
+    place_of_birth:$('#f_pob').value, nationality:$('#f_nat').value, religion:$('#f_religion').value,
+    blood_group:$('#f_blood').value, home_language:$('#f_lang').value,
+    address_line1:$('#f_addr1').value, address_line2:$('#f_addr2').value, city:$('#f_city').value,
+    district:$('#f_district').value, country:$('#f_country').value,
+    parent_phone:$('#f_phone').value, parent_name:$('#f_parent').value,
+    parent_email:$('#f_parent_email').value,
+    allergies:$('#f_allergies').value, special_needs:$('#f_specialneeds').value, medical_notes:$('#f_mednotes').value,
+    status:$('#f_status')?.value, status_reason:$('#f_statusreason')?.value,
+    // Academic
+    class_id:$('#f_class_id')?.value||undefined, stream_id:$('#f_stream_id')?.value||undefined,
+    house_id:$('#f_house_id')?.value||undefined, academic_year:$('#f_ayear')?.value,
+    term:$('#f_term')?.value, admission_date:$('#f_admdate')?.value,
+    previous_school:$('#f_prevschool')?.value, previous_class:$('#f_prevclass')?.value,
+    transfer_reason:$('#f_transreason')?.value,
+    // Legacy compat
+    class: _classesCache.find(c=>c.id==$('#f_class_id')?.value)?.name||$('#f_class_id')?.value||undefined,
+    stream: _streamsCache.find(s=>s.id==$('#f_stream_id')?.value)?.name||undefined,
+    dob:$('#f_dob').value, address:$('#f_addr1').value, phone:$('#f_phone').value,
+    // Guardians
+    guardians:_collectGuardians()
+  };
   if(!body.first_name||!body.last_name) return alert('First & Last name required');
   try{
     let sid=id;
     if(id) await apiPut('/api/students/'+id, body); else { const res=await apiPost('/api/students', body); sid=res.id; }
-    // upload photo if selected (admin only)
+    // Upload photo
     const fileInput=document.getElementById('f_photo');
-    if(fileInput && fileInput.files[0]){
-      try{ const url=await uploadPhoto(fileInput, sid, null); await apiPut('/api/students/'+sid, {photo:url}); }catch(e){ console.log('photo',e.message); alert('Student saved but photo failed: '+e.message); }
+    if(fileInput&&fileInput.files[0]){
+      try{ const url=await uploadPhoto(fileInput,sid,null); await apiPut('/api/students/'+sid,{photo:url}); }catch(e){ alert('Saved but photo failed: '+e.message); }
+    }
+    // Upload new documents
+    const docRows=document.querySelectorAll('.new-doc-row');
+    for(const row of docRows){
+      const file=row.querySelector('.doc_file')?.files[0];
+      if(!file) continue;
+      const fd=new FormData(); fd.append('file',file);
+      try{
+        const r=await fetch('/api/upload/document',{method:'POST',headers:{'Authorization':'Bearer '+token},body:fd});
+        const j=await r.json();
+        if(r.ok && j.url) await apiPost('/api/students/'+sid+'/documents',{doc_type:row.querySelector('.doc_type').value,file_url:j.url,file_name:file.name,expiry_date:row.querySelector('.doc_expiry').value});
+      }catch(e){ console.log('doc upload err',e); }
     }
     closeModal(); renderStudents();
-  }catch(e){alert(e.message)}
+  }catch(e){ alert(e.message); }
 }
-async function delStudent(id){ if(!confirm('Delete student?')) return; await apiDel('/api/students/'+id); renderStudents(); }
-function exportStudentsCSV(){ window.open('/api/students', '_blank'); alert('Use browser print or copy. For full CSV, backend supports CSV export via API extension.'); }
-// BULK REGISTRATION — term-start manual list extract (CSV/XLSX, local parse, never leaves browser)
-let _regRows=[];
-function openImportRegistrationModal(){
-  _regRows=[];
-  openModal(`<h3><i class="ri-upload-2-line"></i> Import Registration List — Term Start</h3>
-    <div class="alert" style="background:#f0fdf4; border:1px solid #bbf7d0; color:#166534; font-size:11px;">Upload the <b>manual registration list</b> you made (Excel .xlsx or CSV). It is parsed <b>locally in your browser</b> (never leaves the device until you confirm) — we extract students automatically. Supports <code>Name</code> or <code>First Name, Last Name</code>, header row, quotes, CRLF/BOM.</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
-      <div><label>Target Class (if missing in file)</label><select id="regClass" class="input"><option value="">Auto from file</option><option>P1</option><option>P2</option><option>P3</option><option>P4</option><option>P5</option><option>P6</option><option>P7</option><option>S1</option><option>S2</option><option>S3</option><option>S4</option><option>S5</option><option>S6</option></select></div>
-      <div><label>Term (optional)</label><input id="regTerm" class="input" placeholder="e.g. 2026 T1" value="2026 T1"></div>
+async function delStudent(id){ if(!confirm('Soft delete this student? They will be marked Withdrawn but can be restored.')) return; await apiDel('/api/students/'+id); renderStudents(); }
+async function restoreStudent(id){ await apiPost('/api/students/'+id+'/restore',{}); toast('Restored','success'); renderStudents(); }
+
+// === STUDENT DETAIL VIEW ===
+async function viewStudent(id){
+  const s=await apiGet('/api/students/'+id);
+  const placements=await apiGet('/api/students/'+id+'/placements');
+  const guardians=s.guardians||[];
+  const docs=s.documents||[];
+  const photo=s.photo_url||s.photo;
+  const photoHtml=photo?`<img src="${photo}" style="width:100px;height:100px;border-radius:50%;object-fit:cover;border:3px solid #0f172a;">`:`<div style="width:100px;height:100px;border-radius:50%;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;"><i class="ri-user-3-line" style="font-size:36px;"></i></div>`;
+  const cur=s.currentPlacement||{};
+  const statusColor=s.status==='Active'?'badge-green':s.status==='Withdrawn'?'badge-red':s.status==='Graduated'?'badge-blue':'badge-amber';
+
+  openModal(`<div style="display:flex;gap:16px;align-items:center;padding:14px;background:linear-gradient(135deg,#0f172a,#1e3a5f);border-radius:12px;color:#fff;margin-bottom:12px;">
+    ${photoHtml}
+    <div style="flex:1;">
+      <div style="font-size:18px;font-weight:800;">${s.first_name} ${s.middle_name||''} ${s.last_name}</div>
+      <div style="font-size:12px;opacity:.8;margin-top:2px;">${s.admission_no} • ${s.gender||''} • ${s.date_of_birth||s.dob||''}</div>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+        <span class="badge badge-blue">${cur.class_name||s.class||'No class'}</span>
+        ${cur.stream_name?`<span class="badge" style="background:#7c3aed;color:#fff;">${cur.stream_name}</span>`:''}
+        ${cur.house_name?`<span class="badge" style="background:${cur.house_colour||'#f59e0b'};color:#fff;">${cur.house_name}</span>`:''}
+        <span class="badge ${statusColor}">${s.status}</span>
+      </div>
     </div>
-    <div style="margin-top:10px; border:1px dashed #cbd5e1; border-radius:10px; padding:14px; text-align:center; background:#f8fafc;">
-      <input type="file" id="regFile" accept=".csv,.xlsx,.xls,.jpg,.jpeg,.png,.pdf" style="display:none;" onchange="handleRegFile(this)">
-      <button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="document.getElementById('regFile').click()"><i class="ri-file-upload-line"></i> Choose file — CSV / Excel / or Photo of paper list</button>
-      <div class="muted" style="font-size:11px; margin-top:6px;">.csv / .xlsx **or** take a photo of the **paper & pen** list (JPG/PNG) — system extracts via OCR. File is read locally.</div>
-      <div style="margin-top:8px;"><a href="#" onclick="downloadRegistrationTemplate(); return false;" style="font-size:11px; color:var(--primary);">⬇ Download CSV template (Name,Class,Gender,DOB,Parent,Phone)</a> • <span class="muted" style="font-size:10px;">Tip: For paper lists, write clearly: <code>Name | Class | Gender</code> per line</span></div>
+    <div style="text-align:right;font-size:11px;opacity:.7;">Joined ${s.admission_date||'N/A'}<br>${s.nationality||''} ${s.religion?'• '+s.religion:''}</div>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+    <button class="btn btn-sm tab-btn active-tab" onclick="switchDetailTab(0,this)" data-dtab="0">Overview</button>
+    <button class="btn btn-sm tab-btn" onclick="switchDetailTab(1,this)" data-dtab="1">Guardians (${guardians.length})</button>
+    <button class="btn btn-sm tab-btn" onclick="switchDetailTab(2,this)" data-dtab="2">Documents (${docs.length})</button>
+    <button class="btn btn-sm tab-btn" onclick="switchDetailTab(3,this)" data-dtab="3">Medical</button>
+    <button class="btn btn-sm tab-btn" onclick="switchDetailTab(4,this)" data-dtab="4">Placement History (${placements.length})</button>
+    <button class="btn btn-sm tab-btn" onclick="switchDetailTab(5,this)" data-dtab="5">QR / ID</button>
+  </div>
+  <div class="detail-tab" data-dtab="0" style="display:block;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
+      <div class="kv"><span class="muted">Full Name:</span> <b>${s.first_name} ${s.middle_name||''} ${s.last_name}</b></div>
+      <div class="kv"><span class="muted">Preferred Name:</span> ${s.preferred_name||'-'}</div>
+      <div class="kv"><span class="muted">DOB:</span> ${s.date_of_birth||s.dob||'-'}</div>
+      <div class="kv"><span class="muted">Place of Birth:</span> ${s.place_of_birth||'-'}</div>
+      <div class="kv"><span class="muted">Nationality:</span> ${s.nationality||'-'}</div>
+      <div class="kv"><span class="muted">Religion:</span> ${s.religion||'-'}</div>
+      <div class="kv"><span class="muted">Blood Group:</span> ${s.blood_group||'Unknown'}</div>
+      <div class="kv"><span class="muted">Language:</span> ${s.home_language||'-'}</div>
+      <div class="kv"><span class="muted">Address:</span> ${[s.address_line1,s.address_line2,s.city,s.district,s.country].filter(Boolean).join(', ')||'-'}</div>
+      <div class="kv"><span class="muted">Previous School:</span> ${s.previous_school||'-'}</div>
+      <div class="kv"><span class="muted">Previous Class:</span> ${s.previous_class||'-'}</div>
+      <div class="kv"><span class="muted">Transfer Reason:</span> ${s.transfer_reason||'-'}</div>
     </div>
-    <div id="regPreview" style="margin-top:10px;"></div>
-    <div id="regMsg" class="muted" style="font-size:11px; margin-top:6px;"></div>
-    <div style="display:flex; gap:8px; margin-top:10px;">
-      <button class="btn btn-sm" id="regConfirmBtn" style="display:none;" onclick="confirmBulkImport()"><i class="ri-check-line"></i> Confirm Import (<span id="regCount">0</span>)</button>
-      <button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button>
-    </div>`);
+    <div style="margin-top:10px;padding:10px;background:#f0fdf4;border-radius:8px;font-size:12px;"><b>Current Placement:</b> ${cur.class_name||s.class||'N/A'} ${cur.stream_name?'/ '+cur.stream_name:''} ${cur.house_name?'— '+cur.house_name:''} (${cur.academic_year||''} ${cur.term||''})</div>
+  </div>
+  <div class="detail-tab" data-dtab="1" style="display:none;">
+    ${guardians.length? guardians.map(g=>`<div style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;"><b>${g.full_name}</b><span class="badge badge-blue">${g.relationship}</span></div>
+      <div style="font-size:12px;margin-top:4px;">Phone: ${g.phone||'-'} ${g.whatsapp?'WhatsApp: '+g.whatsapp:''} ${g.email?'• '+g.email:''}</div>
+      <div style="font-size:11px;color:#64748b;">${g.is_primary?'<span class="badge badge-green">Primary</span> ':''}${g.is_emergency?'<span class="badge badge-red">Emergency</span> ':''}${g.can_pickup?'<span class="badge badge-amber">Can Pick Up</span> ':''}${g.occupation?'Occupation: '+g.occupation:''} ${g.address?'• '+g.address:''}</div>
+      ${g.notes?`<div style="font-size:11px;color:#64748b;margin-top:4px;">${g.notes}</div>`:''}
+    </div>`).join(''):'<div class="muted" style="padding:20px;text-align:center;">No guardians recorded</div>'}
+  </div>
+  <div class="detail-tab" data-dtab="2" style="display:none;">
+    ${docs.length? docs.map(d=>`<div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;font-size:12px;"><i class="ri-file-text-line" style="color:#3b82f6;font-size:18px;"></i><div><b>${d.doc_type}</b> — ${d.file_name||d.file_url.split('/').pop()} ${d.expiry_date?'<span class="muted">Exp: '+d.expiry_date+'</span>':''}</div><a href="${d.file_url}" target="_blank" class="btn btn-sm btn-outline" style="margin-left:auto;padding:2px 6px;font-size:10px;"><i class="ri-external-link-line"></i> View</a></div>`).join(''):'<div class="muted" style="padding:20px;text-align:center;">No documents uploaded</div>'}
+  </div>
+  <div class="detail-tab" data-dtab="3" style="display:none;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
+      <div class="kv"><span class="muted">Blood Group:</span> ${s.blood_group||'Unknown'}</div>
+      <div class="kv"><span class="muted">Allergies:</span> ${s.allergies||'None recorded'}</div>
+      <div class="kv full" style="grid-column:1/-1;"><span class="muted">Special Needs:</span> ${s.special_needs||'None'}</div>
+      <div class="kv full" style="grid-column:1/-1;"><span class="muted">Medical Notes:</span><br><div style="padding:8px;background:#f8fafc;border-radius:6px;margin-top:4px;">${s.medical_notes||'No notes'}</div></div>
+    </div>
+  </div>
+  <div class="detail-tab" data-dtab="4" style="display:none;">
+    ${placements.length? placements.map((p,i)=>`<div style="display:flex;gap:10px;align-items:start;padding:10px;border-left:3px solid ${p.is_current?'#10b981':'#cbd5e1'};margin-bottom:8px;background:${p.is_current?'#f0fdf4':'#fafbfc'};border-radius:0 8px 8px 0;">
+      <div style="min-width:8px;height:8px;border-radius:50%;background:${p.is_current?'#10b981':'#94a3b8'};margin-top:4px;"></div>
+      <div style="flex:1;font-size:12px;">
+        <b>${p.class_name||'?'}</b> ${p.stream_name?'/ '+p.stream_name:''} ${p.house_name?'— '+p.house_name:''} ${p.is_current?'<span class="badge badge-green" style="font-size:9px;">Current</span>':''}
+        <div class="muted" style="font-size:11px;">${p.academic_year} ${p.term} • ${p.promotion_type||'Enrolled'} ${p.start_date?'from '+p.start_date:''}${p.end_date?' to '+p.end_date:''}</div>
+        ${p.notes?`<div style="font-size:11px;color:#64748b;margin-top:2px;">${p.notes}</div>`:''}
+      </div>
+    </div>`).join(''):'<div class="muted" style="padding:20px;text-align:center;">No placement history</div>'}
+  </div>
+  <div class="detail-tab" data-dtab="5" style="display:none;">
+    <div style="text-align:center;padding:16px;">
+      <div id="detailQR" style="display:inline-block;padding:12px;background:#fff;border:2px solid #0f172a;border-radius:12px;"><img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.origin+'/verify?adm='+s.admission_no)}" alt="QR"></div>
+      <div style="margin-top:10px;font-size:11px;color:#64748b;">Scan to verify student profile</div>
+      <div style="margin-top:12px;"><button class="btn btn-sm btn-outline" onclick="previewStudentCard(${s.id})"><i class="ri-id-card-line"></i> ID Card Preview</button></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:14px;">
+    <button class="btn btn-sm" onclick="closeModal();openStudentModal(${id})"><i class="ri-edit-line"></i> Edit</button>
+    <button class="btn btn-sm btn-outline" onclick="closeModal()"><i class="ri-close-line"></i> Close</button>
+  </div>`, '900px');
+}
+function switchDetailTab(idx,btn){
+  document.querySelectorAll('.detail-tab').forEach(t=>t.style.display='none');
+  document.querySelectorAll('[data-dtab]').forEach(b=>{ if(b.tagName==='BUTTON'){ b.classList.remove('active-tab'); b.style.background=''; b.style.color=''; }});
+  const panel=document.querySelector(`.detail-tab[data-dtab="${idx}"]`);
+  if(panel) panel.style.display='block';
+  if(btn){ btn.classList.add('active-tab'); btn.style.background='#0f172a'; btn.style.color='#fff'; }
+}
+
+// === ENHANCED STUDENTS LIST ===
+function renderStudentsList(students, classes, canWrite, canID, school, showAll){
+  const activeSet=new Set(school.activeClasses||[]);
+  const levelFiltered=showAll? students : students.filter(s=> activeSet.has(s.class));
+  const filteredCount=levelFiltered.length;
+  const hiddenCount=students.length-filteredCount;
+  students=levelFiltered;
+  const levelBanner=showAll?`<div class="alert" style="background:#fef3c7;border:1px solid #fde68a;color:#92400e;font-size:11px;margin-bottom:8px;"><b>Showing ALL levels</b> — ${students.length} students. <button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;margin-left:6px;" onclick="renderStudents()">Back to level filter</button></div>`: hiddenCount?`<div class="alert" style="background:#e0f2fe;border:1px solid #7dd3fc;color:#0c4a6e;font-size:11px;margin-bottom:8px;"><b>${school.level.toUpperCase()} mode:</b> Showing <b>${filteredCount}</b> students. <b>${hiddenCount}</b> hidden. <button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;margin-left:6px;" onclick="showAllStudentsTemp()">Show all</button></div>`:`<div class="alert" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;font-size:11px;margin-bottom:8px;"><b>${school.level.toUpperCase()}:</b> ${filteredCount} students shown.</div>`;
+  $('#content').innerHTML=`
+  ${levelBanner}
+  <div class="toolbar" style="flex-wrap:wrap;">
+    <div class="search"><i class="ri-search-line"></i><input id="stuQ" placeholder="Search name, adm no, class..." oninput="filterStudents()"></div>
+    ${canWrite?`<button class="btn btn-sm" onclick="openStudentModal()"><i class="ri-add-line"></i> Admit</button>`:''}
+    ${canWrite?`<button class="btn btn-sm" style="background:#0f172a;color:#fff;" onclick="openImportRegistrationModal()"><i class="ri-upload-2-line"></i> Import List</button>`:''}
+    <button class="btn btn-sm btn-outline" onclick="exportStudentsCSV()">Export CSV</button>
+    ${canID?`<button class="btn btn-sm btn-outline" onclick="previewStudentsPDF()"><i class="ri-download-line"></i> List PDF</button><button class="btn btn-sm btn-outline" onclick="previewAllStudentCards()"><i class="ri-contacts-line"></i> ID Cards</button>`:''}
+  </div>
+  <div class="table-wrap" style="overflow-x:auto;"><table><thead><tr><th>Adm No</th><th>Name</th><th>Class</th><th>Stream</th><th>House</th><th>Parent</th><th>Status</th><th>Actions</th></tr></thead><tbody id="stuBody">${students.map(s=>{
+    const stream=s.current_stream_name||s.stream||'-';
+    const house=s.current_house_name||'-';
+    const parent=s.primary_parent_name||s.parent_name||'-';
+    return `<tr data-q="${(s.first_name+' '+s.last_name+' '+s.admission_no+' '+s.class+' '+stream).toLowerCase()}" style="cursor:pointer;" onclick="viewStudent(${s.id})">
+      <td><b>${s.admission_no}</b></td>
+      <td><b>${s.first_name} ${s.last_name}</b><div class="muted" style="font-size:10px">${s.gender||''} ${s.date_of_birth?'DOB: '+s.date_of_birth:''}</div></td>
+      <td><span class="badge badge-blue">${s.class||'-'}</span></td>
+      <td>${stream!=='-'?`<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;">${stream}</span>`:'-'}</td>
+      <td>${house!=='-'?`<span class="badge" style="background:#f59e0b;color:#fff;font-size:10px;">${house}</span>`:'-'}</td>
+      <td style="font-size:11px;">${parent}</td>
+      <td><span class="badge ${s.status==='Active'?'badge-green':'badge-red'}">${s.status}</span></td>
+      <td style="display:flex;gap:4px;flex-wrap:wrap;" onclick="event.stopPropagation();">
+        ${canID?`<button class="btn btn-sm" style="padding:3px 6px;font-size:10px;background:#0f172a;" onclick="viewStudent(${s.id})"><i class="ri-eye-line"></i></button>`:''}
+        ${canWrite?`<button class="btn btn-sm btn-outline" style="padding:3px 6px;font-size:10px;" onclick="openStudentModal(${s.id})"><i class="ri-edit-line"></i></button>`:''}
+        ${canWrite?`<button class="btn btn-sm btn-danger" style="padding:3px 6px;font-size:10px;" onclick="delStudent(${s.id})"><i class="ri-delete-bin-line"></i></button>`:''}
+      </td>
+    </tr>`;
+  }).join('')}</tbody></table></div>
+  <div class="muted" style="margin-top:8px;">${students.length} students ${classes.length?`| Classes: ${classes.map(c=>c.name).join(', ')}`:''} ${!canWrite?'<span class="badge badge-amber" style="margin-left:6px;">View only</span>':''}</div>
+  <div id="studentCardPreview" style="margin-top:16px;"></div>`;
 }
 function downloadRegistrationTemplate(){
   const csv="First Name,Last Name,Class,Gender,DOB,Parent Name,Parent Phone,Address\nJohn,Doe,P1,M,2018-03-12,Mary Doe,0700123456,Kampala\nJane,Smith,P1,F,2018-07-20,John Smith,0700654321,Mbale\n";
@@ -1312,25 +1581,126 @@ async function renderClasses(){
   const classes=await apiGet('/api/classes');
   const students=await apiGet('/api/students');
   const byClass={}; students.forEach(s=> byClass[s.class]=(byClass[s.class]||0)+1);
+  let streams=[], houses=[];
+  try{ streams=await apiGet('/api/streams'); }catch(e){}
+  try{ houses=await apiGet('/api/houses'); }catch(e){}
+  const byClassStreams={}; streams.forEach(st=>{ (byClassStreams[st.class_id]=byClassStreams[st.class_id]||[]).push(st); });
+  let housesUsed={}; try{ housesUsed=(await apiGet('/api/placements/houses')).reduce((a,x)=>(a[x.house_id]=x.n,a),{}); }catch(e){ const hm=await apiGet('/api/students'); /*list fallback*/ }
+  const housesByPlacement = houses.map(h=>({...h, count: housesUsed[h.id]||0}));
   let classTeachers=[]; try{ classTeachers=await apiGet('/api/class-teachers'); }catch(e){}
   const teacherMap={}; classTeachers.forEach(ct=> teacherMap[ct.class]=ct.teacher_name||ct.username||'—');
-  const canAssignCT = ['admin','headteacher','dos'].includes(user.role);
+  const canAssignCT=['admin','headteacher','dos'].includes(user.role);
+  const canWriteClasses=['admin','headteacher','dos'].includes(user.role);
   let users=[]; if(canAssignCT){ try{ users=await apiGet('/api/users'); }catch(e){} }
   const teacherUsers=users.filter(u=> ['class_teacher','teacher','dos','headteacher','admin'].includes(u.role));
   const classOptions=classes.map(c=>`<option>${c.name}</option>`).join('');
   $('#content').innerHTML=`
-  <div class="grid grid2">
-    <div class="card"><h4>Classes</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Class</th><th>Capacity</th><th>Enrolled</th><th>Room</th><th>Class Teacher</th>${canAssignCT?'<th>Assign</th>':''}</tr></thead><tbody>${classes.map(c=>`<tr><td><b>${c.name}</b></td><td>${c.capacity||40}</td><td>${byClass[c.name]||0}</td><td>${c.room||'-'}</td><td>${teacherMap[c.name] ? `<span class="badge badge-blue">${teacherMap[c.name]}</span>` : '<span class="muted">— none —</span>'}</td>${canAssignCT?`<td><button class="btn btn-sm btn-outline" style="padding:4px 8px; font-size:11px;" onclick="openAssignClassTeacher('${c.name}')"><i class="ri-user-add-line"></i> Assign</button></td>`:''}</tr>`).join('')}</tbody></table></div><div class="alert" style="margin-top:10px; font-size:11px; background:#f8fafc; border:1px solid #e2e8f0;">${canAssignCT?'<b>Director of Studies / Head Teacher / Admin can assign class teachers.</b> Click Assign per class.': '<b>Class teachers assigned by:</b> Director of Studies, Head Teacher, or Admin.'}</div></div>
-    <div class="card"><h4>Promote Students</h4><div class="alert alert-info">Moves all students from one class to next (e.g., P5 -> P6). Uses promotions log.</div>
-      <div class="form-grid"><div><label>From Class</label><select id="p_from" class="input">${classOptions}</select></div><div><label>To Class</label><select id="p_to" class="input">${classOptions}</select></div><div><label>Year</label><input id="p_year" class="input" value="2026"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" onclick="doPromote()">Promote Now</button></div></div>
-      <div class="card" style="margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0;"><h4><i class="ri-magic-line"></i> Automatic Promotion — End of Term III Only</h4><div class="alert" style="background:#fff; border:1px solid #bbf7d0; font-size:11px; margin-top:6px;">System auto-promotes based on <b>pass mark</b>. Below pass → <b>Repeat</b>, very low → <b>Change Learning Environment</b>. Included in report card. <b>One click</b> generates all for the class.</div>
-        <div class="form-grid" style="margin-top:8px"><div><label>From Class</label><select id="ap_from" class="input">${classOptions}</select></div><div><label>To Class (promote to)</label><select id="ap_to" class="input">${classOptions}</select></div><div><label>Pass Mark %</label><input id="ap_pass" type="number" class="input" value="50" min="30" max="80"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="doAutoPromote()"><i class="ri-checkbox-circle-line"></i> Auto Promote (Term III)</button></div></div>
+  <div class="toolbar" style="flex-wrap:wrap; margin-bottom:10px;">
+    <span style="font-weight:700;">Academic Setup:</span>
+    <button class="btn btn-sm" onclick="openStreamsModal(0)"><i class="ri-node-tree"></i> Manage Streams</button>
+    <button class="btn btn-sm" onclick="openHouseModal()"><i class="ri-home-heart-line"></i> Add House</button>
+    <button class="btn btn-sm btn-outline" onclick="renderClasses()"><i class="ri-refresh-line"></i> Refresh</button>
+  </div>
+  <div class="grid" style="grid-template-columns:1.4fr 1fr; gap:14px;">
+    <div class="card"><h4>Classes & Streams</h4><div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Class</th><th>Capacity</th><th>Enrolled</th><th>Streams</th><th>Class Teacher</th>${canAssignCT?'<th>Assign</th>':''}${canWriteClasses?'<th>Edit</th>':''}</tr></thead><tbody>${classes.map(c=>{
+      const cStreams=byClassStreams[c.id]||[];
+      const streamTxt=cStreams.length? cStreams.map(s=>`<span class="badge" style="background:#7c3aed;color:#fff;font-size:10px;">${s.name}</span>`).join(' '):'<span class="muted" style="font-size:11px;">—</span>';
+      return `<tr><td><b>${c.name}</b></td><td>${c.capacity||40}</td><td>${byClass[c.name]||0}</td><td style="max-width:160px;">${streamTxt} ${canWriteClasses?`<button class="btn btn-sm btn-outline" style="padding:2px 5px;font-size:9px;margin-left:2px;" onclick="openStreamsModal(${c.id})"><i class="ri-settings-4-line"></i></button>`:''}</td><td>${teacherMap[c.name]?`<span class="badge badge-blue">${teacherMap[c.name]}</span>`:'<span class="muted">—</span>'}</td>${canAssignCT?`<td><button class="btn btn-sm btn-outline" style="padding:3px 6px;font-size:10px;" onclick="openAssignClassTeacher('${c.name}')"><i class="ri-user-add-line"></i></button></td>`:''}${canWriteClasses?`<td><button class="btn btn-sm btn-outline" style="padding:3px 6px;font-size:10px;" onclick="openClassModal(${c.id})"><i class="ri-edit-line"></i></button></td>`:''}</tr>`;
+    }).join('')}</tbody></table></div>
+    ${canWriteClasses?`<div style="display:flex;gap:8px;margin-top:10px;"><input id="newClass" class="input" placeholder="e.g., P8"><button class="btn btn-sm" onclick="addClass()">Add Class</button></div>`:''}
+    <div class="alert" style="margin-top:10px; font-size:11px; background:#f8fafc; border:1px solid #e2e8f0;">${canAssignCT?'<b>DOS / Head Teacher / Admin</b> assign class teachers & manage streams. Click the <b>settings icon</b> by a class to manage its streams.' : 'Class teachers & streams managed by Director of Studies, Head Teacher, or Admin.'}</div></div>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <div class="card"><h4><i class="ri-home-heart-line"></i> Houses</h4>${canWriteClasses?`<div style="margin:8px 0 4px;"><button class="btn btn-sm" onclick="openHouseModal()"><i class="ri-add-line"></i> New House</button></div>`:''}<div style="margin-top:6px;">${housesByPlacement.map(h=>`<div style="display:flex;align-items:center;gap:8px;padding:7px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;">
+        <span style="width:14px;height:14px;border-radius:50%;background:${h.colour||'#94a3b8'};display:inline-block;"></span>
+        <div style="flex:1;"><b style="font-size:12px;">${h.name}</b><div class="muted" style="font-size:10px;">${h.motto||''} • <b>${h.count}</b> students</div></div>
+        ${canWriteClasses?`<button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" onclick="openHouseModal(${h.id})"><i class="ri-edit-line"></i></button><button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:10px;" onclick="delHouse(${h.id})"><i class="ri-delete-bin-line"></i></button>`:''}
+      </div>`).join('')||'<div class="muted" style="padding:10px;text-align:center;">No houses yet</div>'}</div></div>
+      <div class="card"><h4>Promote Students</h4>
+        <div class="form-grid"><div><label>From Class</label><select id="p_from" class="input">${classOptions}</select></div><div><label>To Class</label><select id="p_to" class="input">${classOptions}</select></div><div><label>Year</label><input id="p_year" class="input" value="2026"></div><div style="display:flex;align-items:end"><button class="btn btn-sm" onclick="doPromote()">Promote</button></div></div>
+      </div>
+      <div class="card" style="background:#f0fdf4; border:1px solid #bbf7d0;"><h4><i class="ri-magic-line"></i> Auto Promotion — Term III</h4>
+        <div class="form-grid" style="margin-top:6px"><div><label>From</label><select id="ap_from" class="input">${classOptions}</select></div><div><label>To</label><select id="ap_to" class="input">${classOptions}</select></div><div><label>Pass %</label><input id="ap_pass" type="number" class="input" value="50" min="30" max="80"></div></div>
+        <button class="btn btn-sm" style="background:#0f172a;color:#fff;width:100%;margin-top:8px;" onclick="doAutoPromote()"><i class="ri-checkbox-circle-line"></i> Auto Promote (Term III)</button>
         <div id="apResult" style="margin-top:8px;"></div>
       </div>
-      <h4 style="margin-top:14px">Add New Class</h4><div style="display:flex;gap:8px;margin-top:8px"><input id="newClass" class="input" placeholder="e.g., P8"><button class="btn btn-sm" onclick="addClass()">Add</button></div>
-      ${canAssignCT?`<div class="card" style="margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0;"><h4><i class="ri-shield-star-line"></i> Director of Studies</h4><div class="muted" style="font-size:11px; margin-top:4px;">DOS manages academics, assigns class teachers, oversees exams & promotions. <br><b>Login:</b> dos / dos123 • Assigned by Admin.</div></div>`:''}
+      ${canAssignCT?`<div class="card" style="background:#f0fdf4; border:1px solid #bbf7d0;"><h4><i class="ri-shield-star-line"></i> Director of Studies</h4><div class="muted" style="font-size:11px; margin-top:4px;">DOS manages academics, assigns class teachers, oversees exams & promotions. <b>Login:</b> dos / dos123</div></div>`:''}
     </div>
   </div>`;
+}
+function openClassModal(id){
+  const c=null;
+  apiGet('/api/classes').then(all=>{
+    const cls=all.find(x=>x.id===id);
+    openModal(`<h3>Edit Class — ${cls?cls.name:''}</h3>
+    <div class="form-grid">
+      <div><label>Name</label><input id="cl_name" class="input" value="${cls?cls.name:''}"></div>
+      <div><label>Capacity</label><input id="cl_cap" type="number" class="input" value="${cls?cls.capacity||40:40}"></div>
+      <div><label>Room</label><input id="cl_room" class="input" value="${cls?cls.room||'':''}"></div>
+      <div><label>Active</label><select id="cl_active" class="input"><option value="1" ${cls&&cls.is_active?'selected':''}>Yes</option><option value="0" ${cls&&!cls.is_active?'selected':''}>No</option></select></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-sm" onclick="saveClass(${id})"><i class="ri-save-line"></i> Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  });
+}
+async function saveClass(id){
+  const body={name:$('#cl_name').value, capacity:parseInt($('#cl_cap').value)||40, room:$('#cl_room').value, is_active:parseInt($('#cl_active').value)};
+  await apiPut('/api/classes/'+id, body); closeModal(); renderClasses();
+}
+function openStreamsModal(classId){
+  Promise.all([apiGet('/api/streams'), apiGet('/api/classes'), apiGet('/api/users')]).then(async ([streams, classes, users])=>{
+    const cls=classId? classes.find(c=>c.id===classId) : null;
+    const scoped=cls? streams.filter(s=>s.class_id===cls.id) : streams;
+    const teachers=users.filter(u=> ['class_teacher','teacher','dos','headteacher','admin'].includes(u.role));
+    const label=cls? cls.name : 'All Classes';
+    openModal(`<h3><i class="ri-node-tree"></i> Streams — ${label}</h3>
+    ${cls?`<table class="rc-table" style="margin-top:8px;"><thead><tr><th>Stream</th><th>Capacity</th><th>Class Teacher</th><th>Students</th><th></th></tr></thead><tbody>${scoped.map(s=>`<tr><td><b>${s.name}</b></td><td>${s.capacity||40}</td><td>${s.teacher_name||'—'}</td><td>${s.student_count||0}</td><td style="display:flex;gap:4px;"><button class="btn btn-sm btn-outline" style="padding:2px 6px;font-size:10px;" onclick="editStreamRow(${s.id})"><i class="ri-edit-line"></i></button><button class="btn btn-sm btn-danger" style="padding:2px 6px;font-size:10px;" onclick="delStream(${s.id})"><i class="ri-delete-bin-line"></i></button></td></tr>`).join('')||'<tr><td colspan=5 class="muted" style="text-align:center;">No streams for this class</td></tr>'}</tbody></table>`:
+    `<div class="table-wrap"><table><thead><tr><th>Class</th><th>Stream</th><th>Capacity</th><th>Teacher</th></tr></thead><tbody>${scoped.map(s=>`<tr><td>${s.class_name||''}</td><td><b>${s.name}</b></td><td>${s.capacity||40}</td><td>${s.teacher_name||'—'}</td></tr>`).join('')}</tbody></table></div>`}
+    ${cls?`<div style="margin-top:10px;display:flex;gap:8px;align-items:end;"><div><label>New Stream</label><input id="ns_name" class="input" placeholder="e.g., C"></div><div style="width:110px;"><label>Capacity</label><input id="ns_cap" type="number" class="input" value="40"></div><div style="flex:1;"><label>Class Teacher (optional)</label><select id="ns_teacher" class="input"><option value="">—</option>${teachers.map(u=>`<option value="${u.id}">${u.name||u.username}</option>`).join('')}</select></div><button class="btn btn-sm" onclick="addStream(${cls.id})"><i class="ri-add-line"></i> Add</button></div>`:''}
+    ${cls?`<div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-sm btn-outline" onclick="closeModal()">Close</button></div>`:''}
+    `, '720px');
+  });
+}
+async function addStream(classId){
+  const name=$('#ns_name').value.trim(); if(!name) return alert('Stream name required');
+  await apiPost('/api/streams',{class_id:classId, name, capacity:parseInt($('#ns_cap').value)||40, class_teacher_id:$('#ns_teacher').value||null});
+  openStreamsModal(classId);
+}
+function editStreamRow(id){
+  apiGet('/api/streams').then(streams=>{
+    const s=streams.find(x=>x.id===id);
+    openModal(`<h3>Edit Stream ${s.name}</h3><div class="form-grid">
+      <div><label>Name</label><input id="st_name" class="input" value="${s.name}"></div>
+      <div><label>Capacity</label><input id="st_cap" type="number" class="input" value="${s.capacity||40}"></div>
+      <div><label>Class Teacher (userId)</label><input id="st_teacher" type="number" class="input" value="${s.class_teacher_id||''}" placeholder="optional"></div>
+    </div><div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-sm" onclick="saveStream(${id},${s.class_id})">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+  });
+}
+async function saveStream(id, classId){
+  const body={name:$('#st_name').value, capacity:parseInt($('#st_cap').value)||40, class_teacher_id:$('#st_teacher').value||null};
+  await apiPut('/api/streams/'+id, body); closeModal(); openStreamsModal(classId);
+}
+async function delStream(id){
+  if(!confirm('Delete this stream?')) return;
+  try{ await apiDel('/api/streams/'+id); openStreamsModal(0); renderClasses(); }catch(e){ alert('Stream delete failed: '+e.message); }
+}
+function openHouseModal(id){
+  const p=id? apiGet('/api/houses').then(hs=>hs.find(h=>h.id===id)) : Promise.resolve({});
+  p.then(h=> openModal(`<h3>${id?'Edit':'Add'} House</h3>
+    <div class="form-grid">
+      <div><label>Name*</label><input id="hs_name" class="input" value="${h.name||''}" placeholder="e.g., Blue"></div>
+      <div><label>Colour</label><input id="hs_colour" type="color" class="input" value="${h.colour||'#3b82f6'}" style="height:38px;"></div>
+      <div class="full"><label>Motto</label><input id="hs_motto" class="input" value="${h.motto||''}" placeholder="e.g., Courage"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px;"><button class="btn btn-sm" onclick="saveHouse(${id||0})"><i class="ri-save-line"></i> Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`));
+}
+async function saveHouse(id){
+  const body={name:$('#hs_name').value, colour:$('#hs_colour').value, motto:$('#hs_motto').value};
+  if(!body.name) return alert('House name required');
+  if(id) await apiPut('/api/houses/'+id, body); else await apiPost('/api/houses', body);
+  closeModal(); renderClasses();
+}
+async function delHouse(id){
+  if(!confirm('Delete this house?')) return;
+  try{ await apiDel('/api/houses/'+id); renderClasses(); }catch(e){ alert(e.message); }
 }
 async function doPromote(){ const from=$('#p_from').value, to=$('#p_to').value, year=$('#p_year').value; if(from===to) return alert('Same class'); const r=await apiPost('/api/promote',{from_class:from,to_class:to,year}); alert(`Promoted ${r.promoted} students`); renderClasses(); }
 async function doAutoPromote(){

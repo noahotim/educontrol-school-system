@@ -30,6 +30,12 @@ app.post('/api/upload/photo', verify, authorize('students','staff','*'), upload.
   if(req.body.staff_id){ try{ db.prepare('UPDATE staff SET photo=? WHERE id=?').run(url, req.body.staff_id); }catch(e){} }
   res.json({url, filename:req.file.filename});
 });
+const docUpload=multer({storage, limits:{fileSize:10*1024*1024}});
+app.post('/api/upload/document', verify, authorize('students','*'), docUpload.single('file'), (req,res)=>{
+  if(!req.file) return res.status(400).json({error:'No file'});
+  const url=`/uploads/${req.file.filename}`;
+  res.json({url, filename:req.file.filename, original:req.file.originalname});
+});
 
 // Maintenance kill switch — HARD: blocks ALL non-admin (even login) when enabled
 function maintenanceGuard(req,res,next){
@@ -207,6 +213,78 @@ app.delete('/api/class-teachers/:id', verify, (req,res)=>{
   db.prepare('DELETE FROM class_teachers WHERE id=?').run(req.params.id);
   res.json({ok:true});
 });
+// Houses — POINT 2
+app.get('/api/houses', verify, (req,res)=> res.json(db.prepare('SELECT * FROM houses ORDER BY name').all()));
+app.get('/api/placements/houses', verify, (req,res)=>{
+  const rows=db.prepare('SELECT house_id, COUNT(*) as n FROM student_placements WHERE is_current=1 AND house_id IS NOT NULL GROUP BY house_id').all();
+  res.json(rows);
+});
+app.post('/api/houses', verify, authorize('classes'), (req,res)=>{
+  const {name, colour, motto}=req.body;
+  if(!name) return res.status(400).json({error:'House name required'});
+  try{ const r=db.prepare('INSERT INTO houses (name,colour,motto) VALUES (?,?,?)').run(name, colour||'', motto||''); res.json({id:r.lastInsertRowid}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.put('/api/houses/:id', verify, authorize('classes'), (req,res)=>{
+  const {name, colour, motto}=req.body;
+  try{ db.prepare('UPDATE houses SET name=?, colour=?, motto=? WHERE id=?').run(name, colour, motto, req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.delete('/api/houses/:id', verify, authorize('classes'), (req,res)=>{
+  try{ const inUse=db.prepare('SELECT COUNT(*) as n FROM student_placements WHERE house_id=?' ).get(req.params.id).n; if(inUse) return res.status(400).json({error:`Cannot delete house — assigned to ${inUse} student placement(s). Clear them first.`}); db.prepare('DELETE FROM houses WHERE id=?').run(req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+// Streams — POINT 2
+app.get('/api/streams', verify, (req,res)=>{
+  const q=req.query.class_id;
+  let rows;
+  if(q) rows=db.prepare('SELECT s.*, c.name as class_name, u.name as teacher_name, (SELECT COUNT(*) FROM student_placements sp WHERE sp.stream_id=s.id AND sp.is_current=1) as student_count FROM streams s LEFT JOIN classes c ON c.id=s.class_id LEFT JOIN users u ON u.id=s.class_teacher_id WHERE s.class_id=? ORDER BY s.name').all(q);
+  else rows=db.prepare('SELECT s.*, c.name as class_name, u.name as teacher_name, (SELECT COUNT(*) FROM student_placements sp WHERE sp.stream_id=s.id AND sp.is_current=1) as student_count FROM streams s LEFT JOIN classes c ON c.id=s.class_id LEFT JOIN users u ON u.id=s.class_teacher_id ORDER BY c.level_order, s.name').all();
+  res.json(rows);
+});
+app.post('/api/streams', verify, authorize('classes'), (req,res)=>{
+  const {class_id, name, capacity, class_teacher_id}=req.body;
+  if(!class_id || !name) return res.status(400).json({error:'class_id and name required'});
+  try{ const r=db.prepare('INSERT INTO streams (class_id, name, capacity, class_teacher_id) VALUES (?,?,?,?)').run(class_id, name, capacity||40, class_teacher_id||null); res.json({id:r.lastInsertRowid}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.put('/api/streams/:id', verify, authorize('classes'), (req,res)=>{
+  const {name, capacity, class_teacher_id}=req.body;
+  try{ db.prepare('UPDATE streams SET name=?, capacity=?, class_teacher_id=? WHERE id=?').run(name, capacity, class_teacher_id, req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.delete('/api/streams/:id', verify, authorize('classes'), (req,res)=>{
+  try{ const inUse=db.prepare('SELECT COUNT(*) as n FROM student_placements WHERE stream_id=?').get(req.params.id).n; if(inUse) return res.status(400).json({error:`Cannot delete stream — assigned to ${inUse} student placement(s).`}); db.prepare('DELETE FROM streams WHERE id=?').run(req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+// Classes — extend to support level_order / is_active
+app.put('/api/classes/:id', verify, authorize('classes'), (req,res)=>{
+  const {name, capacity, room, level_order, is_active, teacher}=req.body;
+  try{ db.prepare('UPDATE classes SET name=COALESCE(?,name), capacity=COALESCE(?,capacity), room=COALESCE(?,room), level_order=COALESCE(?,level_order), is_active=COALESCE(?,is_active), teacher=COALESCE(?,teacher) WHERE id=?').run(name, capacity, room, level_order, is_active, teacher, req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }
+});
+app.delete('/api/classes/:id', verify, authorize('classes'), (req,res)=>{
+  try{
+    const inUse=db.prepare('SELECT COUNT(*) as n FROM student_placements WHERE class_id=?').get(req.params.id).n;
+    const streams=db.prepare('SELECT COUNT(*) as n FROM streams WHERE class_id=?').get(req.params.id).n;
+    if(inUse||streams) return res.status(400).json({error:`Cannot delete class — ${inUse} placements, ${streams} streams reference it.`});
+    db.prepare('DELETE FROM classes WHERE id=?').run(req.params.id); res.json({ok:true});
+  }catch(e){ res.status(400).json({error:e.message}); }
+});
+// Bulk placement — promotion / demotion / house assign
+app.post('/api/placements/bulk', verify, authorize('classes'), (req,res)=>{
+  const {student_ids, class_id, stream_id, house_id, academic_year, term, promotion_type, notes}=req.body;
+  if(!Array.isArray(student_ids) || !student_ids.length) return res.status(400).json({error:'student_ids required'});
+  if(!class_id) return res.status(400).json({error:'class_id required'});
+  const cls=db.prepare('SELECT name FROM classes WHERE id=?').get(class_id);
+  if(!cls) return res.status(400).json({error:'Class not found'});
+  const now=dayjs().format('YYYY-MM-DD');
+  let done=0;
+  const tx=db.transaction(()=>{
+    for(const sid of student_ids){
+      const prev=db.prepare('SELECT * FROM student_placements WHERE student_id=? AND is_current=1').get(sid);
+      db.prepare('UPDATE student_placements SET is_current=0, end_date=? WHERE student_id=? AND is_current=1').run(now, sid);
+      db.prepare('INSERT INTO student_placements (student_id, class_id, stream_id, house_id, academic_year, term, is_current, promoted_from, promotion_type, notes, start_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(sid, class_id, stream_id||null, house_id||null, academic_year||new Date().getFullYear().toString(), term||'Term I',1, prev?.id||null, promotion_type||'Promoted', notes||'', now);
+      db.prepare('UPDATE students SET class=?, stream=?, updated_at=?, updated_by=? WHERE id=?').run(cls.name, stream_id? db.prepare('SELECT name FROM streams WHERE id=?').get(stream_id)?.name : null, dayjs().format('YYYY-MM-DD HH:mm:ss'), req.user.id, sid);
+      done++;
+    }
+  });
+  tx();
+  res.json({ok:true, count:done});
+});
 // Compile results — class_teacher one-click (auto aggregates all subjects)
 app.post('/api/results/compile/:examId', verify, authorize('exams:compile','exams','*'), (req,res)=>{
   const examId=req.params.examId;
@@ -285,23 +363,167 @@ function crud(table, permBase){
   return router;
 }
 
-// Custom students routes with search — RBAC
+// Custom students routes — rich profile + soft-delete + audit
 app.get('/api/students', verify, authorize('students:read'), (req,res)=>{
   const q = req.query.q;
-  let rows;
-  if(q) rows = db.prepare(`SELECT * FROM students WHERE first_name LIKE ? OR last_name LIKE ? OR admission_no LIKE ? OR class LIKE ? ORDER BY id DESC`).all(`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`);
-  else rows = db.prepare('SELECT * FROM students ORDER BY id DESC').all();
+  const includeDeleted = req.query.includeDeleted==='true';
+  let where = includeDeleted ? '' : 'WHERE s.deleted_at IS NULL';
+  let params=[];
+  if(q){
+    where += (where?' AND':'WHERE')+' (s.first_name LIKE ? OR s.last_name LIKE ? OR s.middle_name LIKE ? OR s.preferred_name LIKE ? OR s.admission_no LIKE ? OR s.class LIKE ?)';
+    params.push(`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`);
+  }
+  const sql=`SELECT s.*,
+    c.name as current_class_name, st.name as current_stream_name, h.name as current_house_name, h.colour as house_colour,
+    sp.academic_year as placement_year, sp.term as placement_term,
+    g.phone as primary_parent_phone, g.full_name as primary_parent_name
+    FROM students s
+    LEFT JOIN student_placements sp ON sp.student_id=s.id AND sp.is_current=1
+    LEFT JOIN classes c ON c.id=sp.class_id
+    LEFT JOIN streams st ON st.id=sp.stream_id
+    LEFT JOIN houses h ON h.id=sp.house_id
+    LEFT JOIN student_guardians g ON g.student_id=s.id AND g.is_primary=1
+    ${where} ORDER BY s.id DESC`;
+  const rows=db.prepare(sql).all(...params);
+  // Fallback: if no placement, keep s.class as current
+  rows.forEach(r=>{ if(!r.current_class_name) r.current_class_name=r.class; });
   res.json(rows);
 });
+app.get('/api/students/:id', verify, authorize('students:read'), (req,res)=>{
+  const id=req.params.id;
+  const s=db.prepare('SELECT * FROM students WHERE id=?').get(id);
+  if(!s || s.deleted_at) return res.status(404).json({error:'Not found'});
+  const guardians=db.prepare('SELECT * FROM student_guardians WHERE student_id=? ORDER BY is_primary DESC, id').all(id);
+  const documents=db.prepare('SELECT * FROM student_documents WHERE student_id=? ORDER BY uploaded_at DESC').all(id);
+  const siblings=db.prepare('SELECT s.* FROM student_siblings sb JOIN students s ON s.id=sb.sibling_id WHERE sb.student_id=?').all(id);
+  const placements=db.prepare(`SELECT sp.*, c.name as class_name, st.name as stream_name, h.name as house_name, h.colour as house_colour, u.name as class_teacher_name FROM student_placements sp LEFT JOIN classes c ON c.id=sp.class_id LEFT JOIN streams st ON st.id=sp.stream_id LEFT JOIN houses h ON h.id=sp.house_id LEFT JOIN users u ON u.id=st.class_teacher_id WHERE sp.student_id=? ORDER BY sp.is_current DESC, sp.start_date DESC`).all(id);
+  const current=placements.find(p=>p.is_current) || null;
+  res.json({...s, guardians, documents, siblings, placements, currentPlacement: current});
+});
 app.post('/api/students', verify, authorize('students'), (req,res)=>{
-  const d=req.body;
-  if(!d.admission_no) d.admission_no = 'ADM'+Date.now().toString().slice(-6);
-  if(!d.admission_date) d.admission_date = dayjs().format('YYYY-MM-DD');
-  const keys=Object.keys(d);
+  const b=req.body;
+  if(!b.first_name || !b.last_name) return res.status(400).json({error:'First and last name required'});
+  if(!b.admission_no) b.admission_no='ADM'+Date.now().toString().slice(-6);
+  if(!b.admission_date) b.admission_date=dayjs().format('YYYY-MM-DD');
+  const now=dayjs().format('YYYY-MM-DD HH:mm:ss');
+  const cols=['admission_no','first_name','middle_name','last_name','preferred_name','gender','date_of_birth','place_of_birth','nationality','religion','blood_group','home_language','photo_url','address_line1','address_line2','city','district','country','status','status_reason','status_changed_at','admission_date','previous_school','previous_class','transfer_reason','special_needs','allergies','medical_notes','class','stream','photo','address','parent_name','parent_phone','parent_email','dob','created_at','updated_at','created_by','updated_by'];
+  // Map legacy fields
+  if(b.dob && !b.date_of_birth) b.date_of_birth=b.dob;
+  if(b.photo && !b.photo_url) b.photo_url=b.photo;
+  if(b.address && !b.address_line1) b.address_line1=b.address;
+  const row={};
+  cols.forEach(c=>{ if(b[c]!==undefined) row[c]=b[c]; });
+  row.created_at=now; row.updated_at=now; row.created_by=req.user.id; row.updated_by=req.user.id;
+  if(!row.status) row.status='Active';
+  if(!row.country) row.country='Uganda';
+  const keys=Object.keys(row);
   try{
-    const r=db.prepare(`INSERT INTO students (${keys.join(',')}) VALUES (${keys.map(_=>'?').join(',')})`).run(...keys.map(k=> d[k]));
-    res.json({id:r.lastInsertRowid});
+    const r=db.prepare(`INSERT INTO students (${keys.join(',')}) VALUES (${keys.map(_=>'?').join(',')})`).run(...keys.map(k=>row[k]));
+    const sid=r.lastInsertRowid;
+    // Guardians
+    if(Array.isArray(b.guardians)){
+      const stmt=db.prepare('INSERT INTO student_guardians (student_id, relationship, full_name, phone, whatsapp, email, occupation, address, is_primary, is_emergency, can_pickup, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+      b.guardians.forEach(g=>{ if(!g.full_name) return; stmt.run(sid, g.relationship||'Parent', g.full_name, g.phone||'', g.whatsapp||'', g.email||'', g.occupation||'', g.address||'', g.is_primary?1:0, g.is_emergency?1:0, g.can_pickup!==false?1:0, g.notes||''); });
+      // Ensure one primary
+      const hasPrimary=b.guardians.some(g=>g.is_primary);
+      if(!hasPrimary && b.guardians.length) db.prepare('UPDATE student_guardians SET is_primary=1 WHERE id=(SELECT id FROM student_guardians WHERE student_id=? LIMIT 1)').run(sid);
+    } else if(b.parent_name){
+      db.prepare('INSERT INTO student_guardians (student_id, relationship, full_name, phone, email, is_primary, is_emergency, can_pickup) VALUES (?,?,?,?,?,?,?,?)').run(sid, 'Parent', b.parent_name, b.parent_phone||'', b.parent_email||'',1,1,1);
+    }
+    // Documents
+    if(Array.isArray(b.documents)){
+      const stmt=db.prepare('INSERT INTO student_documents (student_id, doc_type, file_url, file_name, expiry_date, notes) VALUES (?,?,?,?,?,?)');
+      b.documents.forEach(d=>{ if(!d.file_url) return; stmt.run(sid, d.doc_type||'Other', d.file_url, d.file_name||'', d.expiry_date||null, d.notes||''); });
+    }
+    // Siblings
+    if(Array.isArray(b.sibling_ids)){
+      const stmt=db.prepare('INSERT OR IGNORE INTO student_siblings (student_id, sibling_id) VALUES (?,?)');
+      b.sibling_ids.forEach(sib=>{ stmt.run(sid, sib); stmt.run(sib, sid); });
+    }
+    // Initial placement
+    if(b.class_id || b.class){
+      let classId=b.class_id;
+      if(!classId && b.class) classId=db.prepare('SELECT id FROM classes WHERE name=?').get(b.class)?.id;
+      if(classId){
+        let streamId=b.stream_id||null;
+        if(!streamId && b.stream) streamId=db.prepare('SELECT id FROM streams WHERE class_id=? AND name=?').get(classId, b.stream)?.id;
+        const houseId=b.house_id||null;
+        db.prepare('INSERT INTO student_placements (student_id, class_id, stream_id, house_id, academic_year, term, is_current, start_date) VALUES (?,?,?,?,?,?,1,?)').run(sid, classId, streamId, houseId, b.academic_year||new Date().getFullYear().toString(), b.term||'Term I', dayjs().format('YYYY-MM-DD'));
+      }
+    }
+    res.json({id:sid});
   }catch(e){ res.status(400).json({error:e.message});}
+});
+app.put('/api/students/:id', verify, authorize('students'), (req,res)=>{
+  const id=req.params.id;
+  const existing=db.prepare('SELECT * FROM students WHERE id=?').get(id);
+  if(!existing) return res.status(404).json({error:'Not found'});
+  const b=req.body;
+  const now=dayjs().format('YYYY-MM-DD HH:mm:ss');
+  if(b.status && b.status!==existing.status){ b.status_changed_at=now; }
+  b.updated_at=now; b.updated_by=req.user.id;
+  // Map legacy
+  if(b.dob) b.date_of_birth=b.dob;
+  if(b.photo) b.photo_url=b.photo;
+  const cols=['first_name','middle_name','last_name','preferred_name','gender','date_of_birth','place_of_birth','nationality','religion','blood_group','home_language','photo_url','address_line1','address_line2','city','district','country','status','status_reason','status_changed_at','admission_date','previous_school','previous_class','transfer_reason','special_needs','allergies','medical_notes','class','stream','photo','address','parent_name','parent_phone','parent_email','dob','admission_no','updated_at','updated_by'];
+  const keys=Object.keys(b).filter(k=> cols.includes(k));
+  if(keys.length){
+    const set=keys.map(k=>`${k}=?`).join(',');
+    try{ db.prepare(`UPDATE students SET ${set} WHERE id=?`).run(...keys.map(k=>b[k]), id); }catch(e){ return res.status(400).json({error:e.message}); }
+  }
+  // Guardians — replace
+  if(Array.isArray(b.guardians)){
+    db.prepare('DELETE FROM student_guardians WHERE student_id=?').run(id);
+    const stmt=db.prepare('INSERT INTO student_guardians (student_id, relationship, full_name, phone, whatsapp, email, occupation, address, is_primary, is_emergency, can_pickup, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
+    b.guardians.forEach(g=>{ if(!g.full_name) return; stmt.run(id, g.relationship||'Parent', g.full_name, g.phone||'', g.whatsapp||'', g.email||'', g.occupation||'', g.address||'', g.is_primary?1:0, g.is_emergency?1:0, g.can_pickup!==false?1:0, g.notes||''); });
+  }
+  // Documents — append new (keep existing)
+  if(Array.isArray(b.documents) && b.documents.length){
+    const stmt=db.prepare('INSERT INTO student_documents (student_id, doc_type, file_url, file_name, expiry_date, notes) VALUES (?,?,?,?,?,?)');
+    b.documents.forEach(d=>{ if(!d.file_url || d.id) return; stmt.run(id, d.doc_type||'Other', d.file_url, d.file_name||'', d.expiry_date||null, d.notes||''); });
+  }
+  // Siblings
+  if(Array.isArray(b.sibling_ids)){
+    db.prepare('DELETE FROM student_siblings WHERE student_id=?').run(id);
+    const stmt=db.prepare('INSERT OR IGNORE INTO student_siblings (student_id, sibling_id) VALUES (?,?)');
+    b.sibling_ids.forEach(sib=>{ stmt.run(id, sib); stmt.run(sib, id); });
+  }
+  res.json({ok:true});
+});
+app.delete('/api/students/:id', verify, authorize('students'), (req,res)=>{
+  const id=req.params.id;
+  const s=db.prepare('SELECT * FROM students WHERE id=?').get(id);
+  if(!s) return res.status(404).json({error:'Not found'});
+  db.prepare("UPDATE students SET deleted_at=?, status='Withdrawn', status_reason='Soft deleted', status_changed_at=?, updated_at=?, updated_by=? WHERE id=?").run(dayjs().format('YYYY-MM-DD HH:mm:ss'), dayjs().format('YYYY-MM-DD HH:mm:ss'), dayjs().format('YYYY-MM-DD HH:mm:ss'), req.user.id, id);
+  res.json({ok:true, soft:true});
+});
+app.post('/api/students/:id/restore', verify, authorize('students'), (req,res)=>{
+  db.prepare("UPDATE students SET deleted_at=NULL, status='Active', updated_at=?, updated_by=? WHERE id=?").run(dayjs().format('YYYY-MM-DD HH:mm:ss'), req.user.id, req.params.id);
+  res.json({ok:true});
+});
+app.get('/api/students/:id/placements', verify, authorize('students:read'), (req,res)=>{
+  const rows=db.prepare(`SELECT sp.*, c.name as class_name, st.name as stream_name, h.name as house_name, h.colour as house_colour FROM student_placements sp LEFT JOIN classes c ON c.id=sp.class_id LEFT JOIN streams st ON st.id=sp.stream_id LEFT JOIN houses h ON h.id=sp.house_id WHERE sp.student_id=? ORDER BY sp.is_current DESC, sp.start_date DESC`).all(req.params.id);
+  res.json(rows);
+});
+app.post('/api/students/:id/placements', verify, authorize('students'), (req,res)=>{
+  const sid=req.params.id;
+  const {class_id, stream_id, house_id, academic_year, term, promotion_type, notes} = req.body;
+  if(!class_id) return res.status(400).json({error:'class_id required'});
+  const prev=db.prepare('SELECT * FROM student_placements WHERE student_id=? AND is_current=1').get(sid);
+  db.prepare('UPDATE student_placements SET is_current=0, end_date=? WHERE student_id=? AND is_current=1').run(dayjs().format('YYYY-MM-DD'), sid);
+  const r=db.prepare('INSERT INTO student_placements (student_id, class_id, stream_id, house_id, academic_year, term, is_current, promoted_from, promotion_type, notes, start_date) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(sid, class_id, stream_id||null, house_id||null, academic_year||new Date().getFullYear().toString(), term||'Term I',1, prev?.id||null, promotion_type||'Transferred In', notes||'', dayjs().format('YYYY-MM-DD'));
+  // Also sync legacy class field for list compatibility
+  const cls=db.prepare('SELECT name FROM classes WHERE id=?').get(class_id);
+  if(cls) db.prepare('UPDATE students SET class=?, stream=?, updated_at=?, updated_by=? WHERE id=?').run(cls.name, stream_id? db.prepare('SELECT name FROM streams WHERE id=?').get(stream_id)?.name : null, dayjs().format('YYYY-MM-DD HH:mm:ss'), req.user.id, sid);
+  res.json({id:r.lastInsertRowid});
+});
+app.delete('/api/student-documents/:id', verify, authorize('students'), (req,res)=>{ db.prepare('DELETE FROM student_documents WHERE id=?').run(req.params.id); res.json({ok:true}); });
+app.get('/api/student-documents/:studentId', verify, authorize('students:read'), (req,res)=>{ res.json(db.prepare('SELECT * FROM student_documents WHERE student_id=?').all(req.params.studentId)); });
+app.post('/api/students/:id/documents', verify, authorize('students'), (req,res)=>{
+  const {doc_type, file_url, file_name, expiry_date, notes}=req.body;
+  if(!file_url) return res.status(400).json({error:'file_url required'});
+  const r=db.prepare('INSERT INTO student_documents (student_id, doc_type, file_url, file_name, expiry_date, notes) VALUES (?,?,?,?,?,?)').run(req.params.id, doc_type||'Other', file_url, file_name||'', expiry_date||null, notes||'');
+  res.json({id:r.lastInsertRowid});
 });
 app.post('/api/students/bulk', verify, authorize('students'), (req,res)=>{
   const {students: list, term} = req.body;
@@ -322,13 +544,7 @@ app.post('/api/students/bulk', verify, authorize('students'), (req,res)=>{
   });
   try{ tx(list); res.json({inserted, skipped, total: list.length, term: term||''}); }catch(e){ res.status(400).json({error:e.message}); }
 });
-app.put('/api/students/:id', verify, authorize('students'), (req,res)=>{
-  const d=req.body; const keys=Object.keys(d).filter(k=>k!=='id');
-  const set=keys.map(k=> `${k}=?`).join(',');
-  try{ db.prepare(`UPDATE students SET ${set} WHERE id=?`).run(...keys.map(k=> d[k]), req.params.id); res.json({ok:true});}catch(e){res.status(400).json({error:e.message});}
-});
-app.delete('/api/students/:id', verify, authorize('students'), (req,res)=>{ db.prepare('DELETE FROM students WHERE id=?').run(req.params.id); res.json({ok:true}); });
-app.get('/api/students/:id', verify, authorize('students:read'), (req,res)=>{ const r=db.prepare('SELECT * FROM students WHERE id=?').get(req.params.id); if(!r) return res.status(404).json({error:'Not found'}); res.json(r);});
+
 // Public verification — QR scans here to show whole profile (registration, class, performance, fees)
 app.get('/verify', (req,res)=>{
   const adm=(req.query.adm||'').trim();
