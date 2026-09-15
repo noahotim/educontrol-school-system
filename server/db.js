@@ -308,6 +308,82 @@ function init(){
     compiled_at TEXT DEFAULT (datetime('now')),
     UNIQUE(exam_id, student_id)
   );
+  -- Production Exams & Results — POINT: Exams module upgrade
+  CREATE TABLE IF NOT EXISTS exam_classes (
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    class_id INTEGER REFERENCES classes(id) ON DELETE CASCADE,
+    PRIMARY KEY (exam_id, class_id)
+  );
+  CREATE TABLE IF NOT EXISTS exam_streams (
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    stream_id INTEGER REFERENCES streams(id) ON DELETE CASCADE,
+    PRIMARY KEY (exam_id, stream_id)
+  );
+  CREATE TABLE IF NOT EXISTS exam_subjects (
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    subject_id INTEGER REFERENCES subjects(id) ON DELETE CASCADE,
+    max_marks REAL DEFAULT 100,
+    PRIMARY KEY (exam_id, subject_id)
+  );
+  CREATE TABLE IF NOT EXISTS exam_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    subject_id INTEGER REFERENCES subjects(id),
+    marks REAL,
+    grade TEXT,
+    remark TEXT,
+    status TEXT DEFAULT 'Present',
+    entered_by INTEGER REFERENCES users(id),
+    entered_at TEXT,
+    UNIQUE(exam_id, student_id, subject_id)
+  );
+  CREATE TABLE IF NOT EXISTS exam_compiled_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+    total REAL,
+    average REAL,
+    grade TEXT,
+    aggregate REAL,
+    division TEXT,
+    position INTEGER,
+    class_position INTEGER,
+    stream_position INTEGER,
+    class_name TEXT,
+    stream_name TEXT,
+    subject_count INTEGER,
+    present_count INTEGER,
+    compiled_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(exam_id, student_id)
+  );
+  CREATE TABLE IF NOT EXISTS exam_subject_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    exam_id INTEGER REFERENCES exams(id) ON DELETE CASCADE,
+    subject_id INTEGER REFERENCES subjects(id),
+    student_count INTEGER,
+    entered_count INTEGER,
+    mean REAL,
+    highest REAL,
+    lowest REAL,
+    pass_count INTEGER,
+    pass_rate REAL,
+    UNIQUE(exam_id, subject_id)
+  );
+  CREATE TABLE IF NOT EXISTS grading_scales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    is_default INTEGER DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS grading_boundaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scale_id INTEGER REFERENCES grading_scales(id) ON DELETE CASCADE,
+    grade TEXT NOT NULL,
+    min_marks REAL,
+    max_marks REAL,
+    points REAL,
+    division TEXT
+  );
   -- Richer Student Profile — POINT 1
   CREATE TABLE IF NOT EXISTS student_guardians (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -375,6 +451,10 @@ function init(){
   _cols.forEach(([c,t])=>{ try{ db.exec(`ALTER TABLE students ADD COLUMN ${c} ${t}`); }catch(e){} });
   // Migrate classes
   [['level_order','INTEGER'],['is_active','INTEGER DEFAULT 1']].forEach(([c,t])=>{ try{ db.exec(`ALTER TABLE classes ADD COLUMN ${c} ${t}`); }catch(e){} });
+  // Migrate exams — production-grade Exams & Results module
+  [['exam_type','TEXT'],['class_id','INTEGER'],['stream_id','INTEGER'],['max_marks','REAL DEFAULT 100'],['pass_mark','REAL DEFAULT 40'],['weight_percent','REAL'],['status','TEXT DEFAULT \'Draft\''],['created_by','INTEGER'],['updated_at','TEXT']].forEach(([c,t])=>{ try{ db.exec(`ALTER TABLE exams ADD COLUMN ${c} ${t}`); }catch(e){} });
+  try{ db.exec("UPDATE exams SET status='Open' WHERE (status IS NULL OR status='') AND id IN (SELECT DISTINCT exam_id FROM results)"); }catch(e){}
+  try{ db.exec("UPDATE exams SET status='Draft' WHERE status IS NULL OR status=''"); }catch(e){}
   // Backfill level_order
   try{
     const order={'Baby Class':0,'Middle Class':1,'Top Class':2,'P1':3,'P2':4,'P3':5,'P4':6,'P5':7,'P6':8,'P7':9,'S1':10,'S2':11,'S3':12,'S4':13,'S5':14,'S6':15};
@@ -410,6 +490,18 @@ function init(){
   if(s.n===0){
     ['Mathematics','English','Science','Social Studies','RE','Art','Music','PE','ICT','Agriculture','Commerce','Physics','Chemistry','Biology','History','Geography','Literature'].forEach(n=> db.prepare('INSERT OR IGNORE INTO subjects (name,code) VALUES (?,?)').run(n, n.slice(0,3).toUpperCase()));
   }
+  // Seed grading scales if empty (Primary default + UCE secondary)
+  try{
+    if(db.prepare('SELECT COUNT(*) as n FROM grading_scales').get().n===0){
+      const prim=require('./grading_scales_seed');
+      db.prepare('INSERT INTO grading_scales (name,is_default) VALUES (?,?)').run('Primary Scale',1);
+      db.prepare('INSERT INTO grading_scales (name,is_default) VALUES (?,?)').run('Secondary Scale (UCE)',0);
+      const pid=db.prepare('SELECT id FROM grading_scales WHERE name=?').get('Primary Scale').id;
+      const sid=db.prepare('SELECT id FROM grading_scales WHERE name=?').get('Secondary Scale (UCE)').id;
+      const ins=db.prepare('INSERT INTO grading_boundaries (scale_id,grade,min_marks,max_marks,points,division) VALUES (?,?,?,?,?,?)');
+      for(const b of prim){ ins.run(pid,b.grade,b.min,b.max,b.points,b.division); ins.run(sid,b.grade,b.min,b.max,b.points,b.division); }
+    }
+  }catch(e){ console.log('grading scale seed', e.message); }
   // ensure class_teacher & subject_teacher demo users
   try{
     const bcrypt=require('bcryptjs');
@@ -439,6 +531,7 @@ function init(){
   // ensure maintenance table
   try{ db.exec(`CREATE TABLE IF NOT EXISTS maintenance (id INTEGER PRIMARY KEY CHECK (id=1), enabled INTEGER DEFAULT 0, message TEXT DEFAULT 'Access to this system is temporarily locked.\nCONTACT NOAH to be authorised.', enabled_by TEXT, enabled_at TEXT, enabled_until TEXT)`); const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get(); if(!m) db.prepare('INSERT INTO maintenance (id,enabled,message) VALUES (1,0,?)').run('Access to this system is temporarily locked.\nCONTACT NOAH to be authorised.'); }catch(e){ console.log('maintenance table',e.message); }
   try{ db.exec(`ALTER TABLE maintenance ADD COLUMN enabled_until TEXT`); }catch(e){}
+  try{ db.exec(`ALTER TABLE maintenance ADD COLUMN token_valid_since INTEGER DEFAULT 0`); }catch(e){}
   // ensure must_change_password column (for existing DBs)
   try{ db.exec(`ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0`); }catch(e){}
   // scalable school levels — P1-P7 primary now, S1-S6 secondary ready

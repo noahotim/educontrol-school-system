@@ -5,7 +5,8 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const dayjs = require('dayjs');
 const db = require('./db');
-const { sign, verify, verifyWithKey, role, BACKUP_KEY } = require('./auth');
+const jwt = require('jsonwebtoken');
+const { sign, verify, verifyWithKey, role, BACKUP_KEY, SECRET, tokenValidSince } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,6 +23,7 @@ fs.mkdirSync(uploadDir,{recursive:true});
 const storage=multer.diskStorage({destination:(req,file,cb)=>cb(null,uploadDir), filename:(req,file,cb)=>{ const ext=path.extname(file.originalname)||'.jpg'; cb(null, Date.now()+'_'+Math.random().toString(36).slice(2,6)+ext); }});
 const upload=multer({storage, limits:{fileSize:2*1024*1024}, fileFilter:(req,file,cb)=>{ if(!/^image\//.test(file.mimetype)) return cb(new Error('Photo must be an image file (JPG/PNG/HEIC)')); cb(null,true); }});
 app.use('/uploads', express.static(uploadDir));
+app.use(maintenanceGuard);
 app.post('/api/upload/photo', verify, authorize('students','staff','*'), upload.single('photo'), (req,res)=>{
   if(!req.file) return res.status(400).json({error:'No file'});
   const url=`/uploads/${req.file.filename}`;
@@ -38,49 +40,51 @@ app.post('/api/upload/document', verify, authorize('students','*'), docUpload.si
 });
 
 // Maintenance kill switch — HARD: blocks ALL non-admin (even login) when enabled
-function maintenanceGuard(req,res,next){
-  try{
-    const m=db.prepare('SELECT * FROM maintenance WHERE id=1').get();
-    if(m && m.enabled){
-      // Auto-expire if enabled_until passed (admin set a timer)
-      if(m.enabled_until){
-        const until=new Date(m.enabled_until).getTime();
-        if(until && until <= Date.now()){
-          db.prepare('UPDATE maintenance SET enabled=0, enabled_until=NULL WHERE id=1').run();
-          m.enabled=0;
-        }
-      }
+function maintenanceNow(){
+  let m=null;
+  try{ m=db.prepare('SELECT * FROM maintenance WHERE id=1').get(); }catch(e){ return null; }
+  if(m && m.enabled && m.enabled_until){
+    const until=new Date(m.enabled_until).getTime();
+    if(until && until<=Date.now()){
+      try{ db.prepare('UPDATE maintenance SET enabled=0, enabled_until=NULL WHERE id=1').run(); }catch(e){}
+      m.enabled=0; m.enabled_until=null;
     }
-    if(m && m.enabled){
-      const isMaintenanceGet = req.path==='/api/maintenance';
-      const isMaintenanceStatus = req.path==='/api/maintenance/status';
-      const isVerify = req.path==='/verify' || req.path==='/api/verify-student';
-      const isBackupKey = req.path==='/api/backup' && req.query.key;
-      if(isMaintenanceGet || isMaintenanceStatus || isVerify || isBackupKey) return next();
-      // HARD: check login — only admin login allowed
-      if(req.path==='/api/login'){
-        const {username}=req.body||{};
-        if(username==='admin') return next();
-        // check if user exists and is admin (for admin login)
-        try{
-          const u=db.prepare('SELECT role FROM users WHERE username=?').get(username);
-          if(u && u.role==='admin') return next();
-        }catch(e){}
-        return res.status(503).json({maintenance:true, hard:true, message: m.message || 'System under HARD maintenance — only admin can login', enabled_at: m.enabled_at, enabled_by: m.enabled_by});
-      }
-      // For all other routes, only admin token passes
-      let isAdmin=false;
-      const h=req.headers.authorization;
-      let tok=null;
-      if(h) tok=h.replace('Bearer ',''); else if(req.query && req.query.token) tok=req.query.token;
-      if(tok){ try{ const {SECRET}=require('./auth'); const jwt=require('jsonwebtoken'); const u=jwt.verify(tok, SECRET); if(u.role==='admin') isAdmin=true; }catch(e){} }
-      if(isAdmin) return next();
-      return res.status(503).json({maintenance:true, hard:true, message: m.message || 'System under HARD maintenance', enabled_at: m.enabled_at, enabled_by: m.enabled_by});
-    }
-  }catch(e){}
-  next();
+  }
+  return m;
 }
-app.use(maintenanceGuard);
+function adminTokenOk(req){
+  const h=req.headers.authorization;
+  let tok=null;
+  if(h && h.startsWith('Bearer ')) tok=h.slice(7);
+  else if(req.query && req.query.token) tok=req.query.token;
+  if(!tok) return false;
+  try{
+    const decoded=jwt.verify(tok, SECRET);
+    const u=db.prepare('SELECT role FROM users WHERE id=?').get(decoded.id);
+    return !!(u && u.role==='admin');
+  }catch(e){ return false; }
+}
+function maintenanceGuard(req,res,next){
+  let m=null;
+  try{ m=maintenanceNow(); }catch(e){ return next(); }
+  if(!m || !m.enabled) return next();
+  // Health/public endpoints stay reachable so the login page + parent portal can render
+  if(req.path==='/api/maintenance/status' || req.path==='/verify' || req.path==='/api/verify-student') return next();
+  // Login: ONLY admin-role accounts may authenticate while maintenance is on
+  if(req.path==='/api/login'){
+    const {username}=req.body||{};
+    if(username){
+      try{
+        const u=db.prepare('SELECT role FROM users WHERE username=?').get(username);
+        if(u && u.role==='admin') return next();
+      }catch(e){}
+    }
+    return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
+  }
+  // Everything else: a real admin session (DB-verified) is required
+  if(adminTokenOk(req)) return next();
+  return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
+}
 
 // Auth routes
 app.post('/api/login', (req,res)=>{
@@ -154,8 +158,8 @@ const RBAC = {
   admin: ['*'],
   headteacher: ['dashboard','students','attendance','classes','exams','reportcards','aitutor','staff:read','payroll:read','fees:read','expenses:read','reports:read','procurement','inventory','sickbay:read','transport','events','sms','backup:read'],
   dos: ['dashboard','students','attendance','classes','exams','reportcards','exams:compile','classes:promote','staff:read','aitutor','events','transport:read','backup:read'],
-  teacher: ['dashboard','students','attendance','classes:read','exams','reportcards','aitutor','events:read','transport:read'],
-  class_teacher: ['dashboard','students','attendance','classes','exams:read','reportcards','exams:compile','classes:promote','aitutor','events:read','transport:read'],
+  teacher: ['dashboard','students','attendance','classes:read','exams:read','exams:enter','reportcards','aitutor','events:read','transport:read'],
+  class_teacher: ['dashboard','students','attendance','classes','exams:read','exams:enter','exams:compile','reportcards','aitutor','events:read','transport:read'],
   subject_teacher: ['dashboard','students:read','exams:read','exams:enter','aitutor:read','events:read'],
   bursar: ['dashboard','students:read','staff','payroll','fees','expenses','reports','procurement','inventory','events:read','sms'],
   nurse: ['dashboard','students:read','sickbay','events:read','aitutor:read'],
@@ -286,10 +290,11 @@ app.post('/api/placements/bulk', verify, authorize('classes'), (req,res)=>{
   res.json({ok:true, count:done});
 });
 // Compile results — class_teacher one-click (auto aggregates all subjects)
-app.post('/api/results/compile/:examId', verify, authorize('exams:compile','exams','*'), (req,res)=>{
+app.post('/api/results/compile/:examId', verify, authorize('exams:compile','exams'), (req,res)=>{
   const examId=req.params.examId;
   const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(examId);
   if(!exam) return res.status(404).json({error:'Exam not found'});
+  if(exam){ const accC=roleExamAccess(req.user,exam); if(!accC.canCompile) return res.status(403).json({error:'You are not allowed to compile this exam'+(req.user.role==='class_teacher'?' - class teacher can only compile their own class(es).':'')+''}); }
   const results=db.prepare('SELECT r.*, s.first_name, s.last_name, s.class FROM results r JOIN students s ON s.id=r.student_id WHERE r.exam_id=?').all(examId);
   if(!results.length) return res.status(400).json({error:'No marks entered yet — subject teachers must enter marks first'});
   // group by student
@@ -314,8 +319,13 @@ app.post('/api/results/compile/:examId', verify, authorize('exams:compile','exam
   tx();
   res.json({compiled: compiled.length, exam: exam.name, top: compiled.slice(0,3), note: 'Auto-compiled — report cards & positions ready. Class teacher just clicked Compile.'});
 });
-app.get('/api/results/compiled/:examId', verify, authorize('exams:read','exams:compile','*'), (req,res)=>{
-  const rows=db.prepare('SELECT c.*, s.first_name, s.last_name, s.admission_no, s.class FROM compiled_results c JOIN students s ON s.id=c.student_id WHERE c.exam_id=? ORDER BY c.position').all(req.params.examId);
+app.get('/api/results/compiled/:examId', verify, authorize('exams:read','exams:compile','exams'), (req,res)=>{
+  const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.examId);
+  if(!exam) return res.status(404).json({error:'Exam not found'});
+  const accD=roleExamAccess(req.user, exam);
+  if(accD.classes!==null && !accD.classes.length) return res.status(403).json({error:'Compiled results not in your class scope'});
+  let rows=db.prepare('SELECT c.*, s.first_name, s.last_name, s.admission_no, s.class FROM compiled_results c JOIN students s ON s.id=c.student_id WHERE c.exam_id=? ORDER BY c.position').all(req.params.examId);
+  if(accD.classes!==null) rows=rows.filter(r=> accD.classes.includes(String(r.class||'').trim()));
   res.json(rows);
 });
 
@@ -617,29 +627,98 @@ app.get('/api/attendance', verify, authorize('attendance:read'), (req,res)=>{
 });
 
 // Results — allow academic + AI tutor + dashboard for analytics
-app.get('/api/results', verify, authorize('exams:read','aitutor:read','dashboard:read','students:read'), (req,res)=>{
+// ================= ACADEMIC ROLE ACCESS HELPERS (exams, results, promotions) =================
+const ACADEMIC_FULL = ['admin','headteacher','dos'];
+function myAssignments(userId){ try { return db.prepare('SELECT * FROM teacher_assignments WHERE user_id=?').all(userId); } catch(e){ return []; } }
+function classTeacherClasses(userId){
+  const out=new Set();
+  myAssignments(userId).forEach(a=>{ if(String(a.subject||'').trim().toUpperCase()==='ALL') out.add(String(a.class||'').trim()); });
+  try { db.prepare('SELECT class FROM class_teachers WHERE user_id=?').all(userId).forEach(r=> out.add(String(r.class||'').trim())); } catch(e){}
+  return [...out];
+}
+function teacherClasses(userId){
+  const out=new Set();
+  myAssignments(userId).forEach(a=>{ if(String(a.subject||'').trim().toUpperCase()!=='ALL') out.add(String(a.class||'').trim()); });
+  return [...out];
+}
+function teacherSubjectsInClass(userId, cls){
+  const out=new Set();
+  myAssignments(userId).forEach(a=>{ if(String(a.subject||'').trim().toUpperCase()!=='ALL' && String(a.class||'').trim()===String(cls||'').trim()) out.add(String(a.subject||'').trim()); });
+  return [...out];
+}
+function examScopeClasses(exam){
+  if(!exam) return [];
+  let names=[];
+  try { names=db.prepare('SELECT c.name FROM exam_classes ec JOIN classes c ON c.id=ec.class_id WHERE ec.exam_id=?').all(exam.id).map(r=>String(r.name||'').trim()); } catch(e){}
+  if(names.length) return [...new Set(names.filter(Boolean))];
+  const flat=String(exam.class||'').trim();
+  return flat ? [flat] : [];
+}
+function examSubjectNames(exam){
+  if(!exam) return [];
+  try { return db.prepare('SELECT s.name FROM exam_subjects es JOIN subjects s ON s.id=es.subject_id WHERE es.exam_id=?').all(exam.id).map(r=>String(r.name||'').trim()).filter(Boolean); } catch(e){}
+  return [];
+}
+// classes=null -> ALL classes in scope; subjects=null -> ALL subjects.
+function roleExamAccess(user, exam){
+  const role=user.role;
+  if(ACADEMIC_FULL.includes(role)) return {classes:null, subjects:null, canEnter:true, canCompile:true, canPublish:true, canManage:true};
+  const examClasses=examScopeClasses(exam);
+  if(role==='class_teacher'){
+    const mySet=Array.from(new Set([...classTeacherClasses(user.id), ...teacherClasses(user.id)]));
+    const inScope=examClasses.filter(c=> mySet.includes(c));
+    if(!inScope.length) return {classes:[], subjects:[], canEnter:false, canCompile:false, canPublish:false, canManage:false};
+    const subjects=[...new Set(inScope.flatMap(c=> teacherSubjectsInClass(user.id,c)))];
+    return {classes:inScope, subjects: subjects.length? subjects : null, canEnter: subjects.length>0, canCompile: inScope.length===examClasses.length, canPublish:false, canManage:false};
+  }
+  if(role==='subject_teacher' || role==='teacher'){
+    const mySet=teacherClasses(user.id);
+    const inScope=examClasses.filter(c=> mySet.includes(c));
+    if(!inScope.length) return {classes:[], subjects:[], canEnter:false, canCompile:false, canPublish:false, canManage:false};
+    const subjects=[...new Set(inScope.flatMap(c=> teacherSubjectsInClass(user.id,c)))];
+    return {classes:inScope, subjects, canEnter: subjects.length>0, canCompile:false, canPublish:false, canManage:false};
+  }
+  return {classes:[], subjects:[], canEnter:false, canCompile:false, canPublish:false, canManage:false};
+}
+function canPromote(user){ return ['admin','headteacher','dos'].includes(user.role); }
+app.get('/api/results', verify, authorize('exams:read','exams','exams:enter','exams:compile','reportcards:read','aitutor:read','dashboard:read'), (req,res)=>{
+  if(['bursar','nurse'].includes(req.user.role)) return res.status(403).json({error:'No access to exams & results'});
   const {exam_id, student_id} = req.query;
   let q='SELECT r.*, s.first_name, s.last_name, s.class FROM results r JOIN students s ON s.id=r.student_id WHERE 1=1';
   const p=[];
   if(exam_id){ q+=' AND r.exam_id=?'; p.push(exam_id);}
   if(student_id){ q+=' AND r.student_id=?'; p.push(student_id);}
-  res.json(db.prepare(q).all(...p));
+  let rows=db.prepare(q).all(...p);
+  const restricted=['subject_teacher','teacher','class_teacher'].includes(req.user.role);
+  if(restricted){
+    if(!exam_id){
+      const clsAll=(req.user.role==='class_teacher') ? Array.from(new Set([...classTeacherClasses(req.user.id), ...teacherClasses(req.user.id)])) : teacherClasses(req.user.id);
+      rows=rows.filter(r=> clsAll.includes(String(r.class||'').trim()));
+    } else {
+      const acc=roleExamAccess(req.user, db.prepare('SELECT * FROM exams WHERE id=?').get(exam_id) || null);
+      if(acc.classes && acc.classes.length) rows=rows.filter(r=> acc.classes.includes(String(r.class||'').trim()));
+      if(acc.subjects && acc.subjects.length) rows=rows.filter(r=> !r.subject || acc.subjects.some(s=>String(s||'').trim().toLowerCase()===String(r.subject).trim().toLowerCase()));
+    }
+  }
+  res.json(rows);
 });
 app.post('/api/results/bulk', verify, authorize('exams','exams:enter'), (req,res)=>{
   const {exam_id, subject, entries} = req.body;
-  // Auto-routing: subject teachers can only enter for their assigned subject/class
-  if(req.user.role==='subject_teacher'){
-    const assigns=db.prepare('SELECT * FROM teacher_assignments WHERE user_id=?').all(req.user.id);
+  // Auto-routing: subject/class teachers can only enter for their assigned subject/class
+  if(['subject_teacher','teacher','class_teacher'].includes(req.user.role)){
+    const assigns=db.prepare('SELECT * FROM teacher_assignments WHERE user_id=? AND subject<>?').all(req.user.id,'ALL');
     const allowedSubs=new Set(assigns.map(a=>a.subject));
     const allowedClasses=new Set(assigns.map(a=>a.class));
-    if(!allowedSubs.has(subject) && !allowedSubs.has('ALL')){
+    if(req.user.role==='class_teacher'){
+      try { db.prepare('SELECT class FROM class_teachers WHERE user_id=?').all(req.user.id).forEach(r=> allowedClasses.add(String(r.class))); } catch(e){}
+    }
+    if(!allowedSubs.has(subject)){
       return res.status(403).json({error:`You are not assigned to ${subject}. Your subjects: ${[...allowedSubs].join(', ')||'none'}. Ask admin to assign.`});
     }
-    // verify each student's class is allowed
     for(const e of entries){
       const st=db.prepare('SELECT class FROM students WHERE id=?').get(e.student_id);
       if(!st) continue;
-      if(!allowedClasses.has(st.class) && !allowedClasses.has('ALL') && ![...allowedClasses].some(c=>c===st.class)){
+      if(![...allowedClasses].some(c=>c===st.class)){
         return res.status(403).json({error:`You are not assigned to class ${st.class} for ${subject}. Your classes: ${[...allowedClasses].join(', ')}`});
       }
     }
@@ -743,6 +822,7 @@ app.get('/api/dashboard', verify, authorize('dashboard:read'), (req,res)=>{
 
 // Promotion
 app.post('/api/promote', verify, authorize('classes'), (req,res)=>{
+  if(!canPromote(req.user)) return res.status(403).json({error:'Only admin/headteacher/DOS can promote'});
   const {from_class, to_class, year} = req.body;
   const students = db.prepare('SELECT * FROM students WHERE class=?').all(from_class);
   const upd = db.prepare('UPDATE students SET class=? WHERE id=?');
@@ -752,7 +832,7 @@ app.post('/api/promote', verify, authorize('classes'), (req,res)=>{
 });
 // Automatic promotion at end of Term III — based on pass mark, recommends repeat / change learning environment, one-click generates all, included in report card
 app.post('/api/promote/auto', verify, (req,res)=>{
-  if(!['admin','headteacher','dos','class_teacher'].includes(req.user.role) && !req.user.role.includes('teacher')) return res.status(403).json({error:'Only admin/headteacher/DOS/class teacher can promote'});
+  if(!canPromote(req.user)) return res.status(403).json({error:'Only admin/headteacher/DOS can promote'});
   const {from_class, to_class, year, term, passMark} = req.body;
   const pass = Number(passMark||50);
   const t = term||'Term III';
@@ -992,7 +1072,136 @@ app.post('/api/seed', verify, (req,res)=>{
 app.use('/api/staff', crud('staff','staff'));
 app.use('/api/classes', crud('classes','classes'));
 app.use('/api/subjects', crud('subjects','exams'));
-app.use('/api/exams', crud('exams','exams'));
+// ================= PRODUCTION EXAMS & RESULTS =================
+function bankGrading(exam){
+  const def=db.prepare('SELECT * FROM grading_scales WHERE is_default=1 ORDER BY id LIMIT 1').get() || db.prepare('SELECT * FROM grading_scales ORDER BY id LIMIT 1').get();
+  let scale=def;
+  try{
+    const classNames=db.prepare('SELECT c.name FROM exam_classes ec JOIN classes c ON c.id=ec.class_id WHERE ec.exam_id=?').all(exam.id).map(r=>r.name);
+    if(classNames.some(n=>/^S[1-6]/i.test(String(n).trim()))) scale=db.prepare('SELECT * FROM grading_scales WHERE is_default=0 ORDER BY id LIMIT 1').get() || def;
+  }catch(e){}
+  const boundaries=db.prepare('SELECT * FROM grading_boundaries WHERE scale_id=? ORDER BY min_marks DESC').all(scale.id);
+  return {scale, boundaries};
+}
+function gradeFor(marks,bounds){
+  if(marks===null||marks===undefined||isNaN(marks)) return {grade:null,points:0,division:null,found:false};
+  for(const b of bounds){ if(marks>=b.min_marks && marks<=b.max_marks) return {grade:b.grade,points:b.points===null?0:b.points,division:b.division||null,found:true}; }
+  const top=bounds[bounds.length-1];
+  if(top && marks<top.min_marks) return {grade:top.grade,points:top.points||0,division:top.division||null,found:true};
+  return {grade:null,points:0,division:null,found:false};
+}
+function gradeDivision(avg){ if(avg>=80) return 'Division 1'; if(avg>=60) return 'Division 2'; if(avg>=50) return 'Division 3'; if(avg>=40) return 'Division 4'; return 'Ungraded'; }
+function examStudentScope(exam){
+  let scope=db.prepare(`SELECT s.id, s.first_name, s.last_name, s.admission_no, COALESCE(c.name, s.class) as class_name, COALESCE(st.name,'') as stream_name FROM students s LEFT JOIN student_placements sp ON sp.student_id=s.id AND sp.is_current=1 LEFT JOIN classes c ON c.id=sp.class_id LEFT JOIN streams st ON st.id=sp.stream_id WHERE s.deleted_at IS NULL ORDER BY class_name, s.admission_no`).all();
+  const classNames=db.prepare('SELECT c.name FROM exam_classes ec JOIN classes c ON c.id=ec.class_id WHERE ec.exam_id=?').all(exam.id).map(r=>r.name);
+  const streamNames=db.prepare('SELECT s.name FROM exam_streams es JOIN streams s ON s.id=es.stream_id WHERE es.exam_id=?').all(exam.id).map(r=>r.name);
+  if(classNames.length) scope=scope.filter(x=> classNames.includes(x.class_name));
+  if(streamNames.length) scope=scope.filter(x=> streamNames.includes(x.stream_name));
+  return scope;
+}
+// LIST exams
+app.get('/api/exams', verify, authorize('exams:read','exams'), (req,res)=>{
+  const rows=db.prepare(`SELECT e.*,
+    (SELECT COUNT(*) FROM exam_results r WHERE r.exam_id=e.id) as results_count,
+    (SELECT COUNT(*) FROM exam_compiled_results c WHERE c.exam_id=e.id) as compiled_count,
+    (SELECT COUNT(*) FROM exam_subjects es WHERE es.exam_id=e.id) as subject_count,
+    (SELECT GROUP_CONCAT(c.name,' • ') FROM exam_classes ec JOIN classes c ON c.id=ec.class_id WHERE ec.exam_id=e.id) as class_names,
+    (SELECT GROUP_CONCAT(s.name,', ') FROM exam_streams esn JOIN streams s ON s.id=esn.stream_id WHERE esn.exam_id=e.id) as stream_names
+  FROM exams e ORDER BY e.id DESC`).all();
+  const examsOut=rows.map(e=> Object.assign({}, e, {my_access: roleExamAccess(req.user, e)}));
+  res.json(examsOut.filter(e=> e.my_access.classes===null || e.my_access.classes.length>0));
+});
+// CREATE exam (multi-class/stream/subjects)
+app.post('/api/exams', verify, authorize('exams'), (req,res)=>{
+  const {name,exam_type,term,year,date,classes,streams,subjects,max_marks,pass_mark,weight_percent}=req.body;
+  if(!name) return res.status(400).json({error:'Exam name required'});
+  const classList=(Array.isArray(classes)?classes:[classes]).filter(Boolean).map(Number);
+  if(!classList.length) return res.status(400).json({error:'Select at least one class'});
+  const firstName=db.prepare('SELECT name FROM classes WHERE id=?').get(classList[0]);
+  try{
+    const r=db.prepare('INSERT INTO exams (name,exam_type,term,year,class,date,max_marks,pass_mark,weight_percent,status,created_by,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run(name, exam_type||'End of Term', term||'Term I', year||String(new Date().getFullYear()), firstName?firstName.name:name, date||null, max_marks||100, pass_mark!=null?pass_mark:40, weight_percent||null, 'Draft', req.user.id, new Date().toISOString(), new Date().toISOString());
+    const eid=r.lastInsertRowid;
+    const icl=db.prepare('INSERT OR IGNORE INTO exam_classes (exam_id,class_id) VALUES (?,?)');
+    db.transaction(()=>{ for(const cid of classList) icl.run(eid,cid); })();
+    const istr=db.prepare('INSERT OR IGNORE INTO exam_streams (exam_id,stream_id) VALUES (?,?)');
+    const sList=(Array.isArray(streams)?streams:[streams]).filter(Boolean).map(Number);
+    db.transaction(()=>{ for(const sid of sList) istr.run(eid,sid); })();
+    const isub=db.prepare('INSERT OR IGNORE INTO exam_subjects (exam_id,subject_id,max_marks) VALUES (?,?,?)');
+    const subList=Array.isArray(subjects)?subjects:[];
+    db.transaction(()=>{ for(const sb of subList){ const sid=Number(sb&&sb.subject_id); if(sid) isub.run(eid, sid, sb.max_marks||max_marks||100); } })();
+    res.json({id:eid});
+  }catch(e){ res.status(400).json({error:e.message}); }
+});
+// UPDATE exam
+app.put('/api/exams/:id', verify, authorize('exams'), (req,res)=>{
+  const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if(!exam) return res.status(404).json({error:'Exam not found'});
+  const {name,exam_type,term,year,date,max_marks,pass_mark,weight_percent,status}=req.body;
+  try{
+    db.prepare('UPDATE exams SET name=COALESCE(?,name), exam_type=COALESCE(?,exam_type), term=COALESCE(?,term), year=COALESCE(?,year), date=COALESCE(?,date), max_marks=COALESCE(?,max_marks), pass_mark=COALESCE(?,pass_mark), weight_percent=COALESCE(?,weight_percent), status=COALESCE(?,status), updated_at=? WHERE id=?')
+      .run(name??null,exam_type??null,term??null,year??null,date??null,max_marks!=null?max_marks:null,pass_mark!=null?pass_mark:null,weight_percent!=null?weight_percent:null,status??null,new Date().toISOString(),req.params.id);
+  }catch(e){ return res.status(400).json({error:e.message}); }
+  if(Array.isArray(req.body.classes)){
+    db.prepare('DELETE FROM exam_classes WHERE exam_id=?').run(req.params.id);
+    const icl=db.prepare('INSERT OR IGNORE INTO exam_classes (exam_id,class_id) VALUES (?,?)');
+    db.transaction(()=>{ for(const cid of req.body.classes.filter(Boolean).map(Number)) icl.run(req.params.id,cid); })();
+    const first=db.prepare('SELECT name FROM classes WHERE id=?').get(req.body.classes[0]);
+    try{ db.prepare('UPDATE exams SET class=? WHERE id=?').run(first?first.name:null, req.params.id); }catch(e){}
+  }
+  if(Array.isArray(req.body.streams)){
+    db.prepare('DELETE FROM exam_streams WHERE exam_id=?').run(req.params.id);
+    const istr=db.prepare('INSERT OR IGNORE INTO exam_streams (exam_id,stream_id) VALUES (?,?)');
+    db.transaction(()=>{ for(const sid of req.body.streams.filter(Boolean).map(Number)) istr.run(req.params.id,sid); })();
+  }
+  if(Array.isArray(req.body.subjects)){
+    db.prepare('DELETE FROM exam_subjects WHERE exam_id=?').run(req.params.id);
+    const isub=db.prepare('INSERT OR IGNORE INTO exam_subjects (exam_id,subject_id,max_marks) VALUES (?,?,?)');
+    db.transaction(()=>{ for(const sb of req.body.subjects){ const sid=Number(sb&&sb.subject_id); if(sid) isub.run(req.params.id, sid, sb.max_marks||req.body.max_marks||100); } })();
+  }
+  res.json({ok:true});
+});
+// DELETE exam
+app.delete('/api/exams/:id', verify, authorize('exams'), (req,res)=>{
+  try{
+    db.prepare('DELETE FROM compiled_results WHERE exam_id=?').run(req.params.id);
+    db.prepare('DELETE FROM exams WHERE id=?').run(req.params.id);
+    res.json({ok:true});
+  }catch(e){ res.status(400).json({error:e.message}); }
+});
+// DETAIL exam
+app.get('/api/exams/:id', verify, authorize('exams:read','exams'), (req,res)=>{
+  const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id);
+  if(!exam) return res.status(404).json({error:'Not found'});
+  exam.classes=db.prepare('SELECT ec.class_id as id, c.name FROM exam_classes ec JOIN classes c ON c.id=ec.class_id WHERE ec.exam_id=? ORDER BY c.level_order').all(exam.id);
+  exam.streams=db.prepare('SELECT es.stream_id as id, s.name FROM exam_streams es JOIN streams s ON s.id=es.stream_id WHERE es.exam_id=?').all(exam.id);
+  exam.subjects=db.prepare('SELECT es.subject_id as id, s.name, s.code, es.max_marks FROM exam_subjects es JOIN subjects s ON s.id=es.subject_id WHERE es.exam_id=? ORDER BY s.name').all(exam.id);
+  const accD2=roleExamAccess(req.user,exam); if(accD2.classes!==null && !accD2.classes.length) return res.status(403).json({error:'Exam not in your class scope'}); exam.my_access=accD2;
+  res.json(exam);
+});
+// EXAM SUBJECTS add/remove
+app.post('/api/exams/:id/subjects', verify, authorize('exams'), (req,res)=>{ const {subject_id,max_marks}=req.body; if(!subject_id) return res.status(400).json({error:'subject_id required'}); try{ db.prepare('INSERT OR IGNORE INTO exam_subjects (exam_id,subject_id,max_marks) VALUES (?,?,?)').run(req.params.id,Number(subject_id),max_marks||100); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }});
+app.delete('/api/exams/:id/subjects/:subjectId', verify, authorize('exams'), (req,res)=>{ db.prepare('DELETE FROM exam_subjects WHERE exam_id=? AND subject_id=?').run(req.params.id, req.params.subjectId); res.json({ok:true}); });
+// GRADING SCALES CRUD
+app.get('/api/grading/scales', verify, authorize('exams:read','exams'), (req,res)=>{ const scales=db.prepare('SELECT * FROM grading_scales ORDER BY is_default DESC, id').all(); scales.forEach(sc=> sc.boundaries=db.prepare('SELECT * FROM grading_boundaries WHERE scale_id=? ORDER BY min_marks DESC').all(sc.id)); res.json(scales); });
+app.post('/api/grading/scales', verify, authorize('exams'), (req,res)=>{ const {name,is_default}=req.body; if(!name) return res.status(400).json({error:'Scale name required'}); if(is_default) try{ db.prepare('UPDATE grading_scales SET is_default=0').run(); }catch(e){} try{ const r=db.prepare('INSERT INTO grading_scales (name,is_default) VALUES (?,?)').run(name, is_default?1:0); res.json({id:r.lastInsertRowid}); }catch(e){ res.status(400).json({error:e.message}); }});
+app.put('/api/grading/scales/:id', verify, authorize('exams'), (req,res)=>{ const {name,is_default}=req.body; if(is_default) try{ db.prepare('UPDATE grading_scales SET is_default=0').run(); }catch(e){} try{ db.prepare('UPDATE grading_scales SET name=COALESCE(?,name), is_default=COALESCE(?,is_default) WHERE id=?').run(name||null, (is_default===null||is_default===undefined)?null:(is_default?1:0), req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }});
+app.delete('/api/grading/scales/:id', verify, authorize('exams'), (req,res)=>{ try{ db.prepare('DELETE FROM grading_boundaries WHERE scale_id=?').run(req.params.id); db.prepare('DELETE FROM grading_scales WHERE id=?').run(req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }});
+app.post('/api/grading/boundaries', verify, authorize('exams'), (req,res)=>{ const {scale_id,grade,min_marks,max_marks,points,division}=req.body; if(!scale_id||!grade) return res.status(400).json({error:'scale_id & grade required'}); try{ const r=db.prepare('INSERT INTO grading_boundaries (scale_id,grade,min_marks,max_marks,points,division) VALUES (?,?,?,?,?,?)').run(scale_id,grade,min_marks,max_marks,points,division); res.json({id:r.lastInsertRowid}); }catch(e){ res.status(400).json({error:e.message}); }});
+app.put('/api/grading/boundaries/:id', verify, authorize('exams'), (req,res)=>{ const {grade,min_marks,max_marks,points,division}=req.body; try{ db.prepare('UPDATE grading_boundaries SET grade=COALESCE(?,grade), min_marks=COALESCE(?,min_marks), max_marks=COALESCE(?,max_marks), points=COALESCE(?,points), division=COALESCE(?,division) WHERE id=?').run(grade||null,min_marks!=null?min_marks:null,max_marks!=null?max_marks:null,points!=null?points:null,division||null,req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }});
+app.delete('/api/grading/boundaries/:id', verify, authorize('exams'), (req,res)=>{ try{ db.prepare('DELETE FROM grading_boundaries WHERE id=?').run(req.params.id); res.json({ok:true}); }catch(e){ res.status(400).json({error:e.message}); }});
+// EXAM RESULTS get + bulk upsert
+app.get('/api/exam-results', verify, authorize('exams:read','exams','exams:enter'), (req,res)=>{ const {exam_id,subject_id,student_id}=req.query; let q='SELECT r.*, s.first_name, s.last_name, s.admission_no, s.class as class, sub.name as subject FROM exam_results r JOIN students s ON s.id=r.student_id JOIN subjects sub ON sub.id=r.subject_id WHERE 1=1'; const p=[]; if(exam_id){ q+=' AND r.exam_id=?'; p.push(exam_id); } if(subject_id){ q+=' AND r.subject_id=?'; p.push(subject_id); } if(student_id){ q+=' AND r.student_id=?'; p.push(student_id); } q+=' ORDER BY s.class, s.first_name, s.last_name LIMIT 2000'; let rows=db.prepare(q).all(...p); const restricted=['subject_teacher','teacher','class_teacher'].includes(req.user.role); if(restricted){ const acc=roleExamAccess(req.user, exam_id ? (db.prepare('SELECT * FROM exams WHERE id=?').get(exam_id) || null) : null); if(acc && acc.classes && acc.classes.length) rows=rows.filter(r=> acc.classes.includes(String(r.class||'').trim())); if(acc && acc.subjects && acc.subjects.length) rows=rows.filter(r=> !r.subject || acc.subjects.some(s=>String(s||'').trim().toLowerCase()===String(r.subject).trim().toLowerCase())); } res.json(rows); });
+app.post('/api/exam-results/bulk', verify, authorize('exams','exams:enter'), (req,res)=>{ const {exam_id,entries}=req.body; if(!exam_id) return res.status(400).json({error:'exam_id required'}); if(!Array.isArray(entries)||!entries.length) return res.status(400).json({error:'entries array required'}); const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(exam_id); if(!exam) return res.status(404).json({error:'Exam not found'}); if(['Compiled','Published','Locked'].includes(exam.status) && req.user.role!=='admin') return res.status(403).json({error:`Exam is ${exam.status} — marks entry locked. Ask an admin to unlock.`}); const {boundaries}=bankGrading(exam); const subjNameMap={}; db.prepare('SELECT id,name FROM subjects').all().forEach(s=> subjNameMap[s.id]=s.name); const studCls={}; db.prepare(`SELECT s.id, COALESCE(c.name,s.class) as cls FROM students s LEFT JOIN student_placements sp ON sp.student_id=s.id AND sp.is_current=1 LEFT JOIN classes c ON c.id=sp.class_id`).all().forEach(s=> studCls[s.id]=s.cls); const restrictedEntry=['subject_teacher','teacher','class_teacher'].includes(req.user.role); let entryScope=null; if(restrictedEntry){ const accE=roleExamAccess(req.user, exam); if(accE.classes!==null && !accE.classes.length) return res.status(403).json({error:'This exam is not in your class scope'}); entryScope=accE; } const subjMaxMap={}; db.prepare('SELECT subject_id, max_marks FROM exam_subjects WHERE exam_id=?').all(exam.id).forEach(r=> subjMaxMap[String(r.subject_id)]=r.max_marks); const now=new Date().toISOString(); let saved=0; const ins=db.prepare(`INSERT INTO exam_results (exam_id,student_id,subject_id,marks,grade,remark,status,entered_by,entered_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(exam_id,student_id,subject_id) DO UPDATE SET marks=excluded.marks, grade=excluded.grade, remark=excluded.remark, status=excluded.status, entered_by=excluded.entered_by, entered_at=excluded.entered_at`); const leg=db.prepare(`INSERT INTO results (exam_id,student_id,subject,marks,grade,remarks) VALUES (?,?,?,?,?,?) ON CONFLICT(exam_id,student_id,subject) DO UPDATE SET marks=excluded.marks, grade=excluded.grade, remarks=excluded.remarks`); try{ db.transaction(()=>{ for(const e of entries){ const subject_id=Number(e.subject_id), student_id=Number(e.student_id); if(!subject_id||!student_id) continue; const status=e.status||'Present'; let marks=e.marks===null||e.marks===undefined||e.marks===''? null : Number(e.marks); if(marks!==null && isNaN(marks)) continue; if(marks!==null){ const mx=subjMaxMap[String(subject_id)]||100; if(marks<0) marks=0; if(marks>mx) marks=mx; } if(entryScope){ const sn=String(subjNameMap[subject_id]||'').trim(); const cls=String(studCls[student_id]||'').trim(); if(entryScope.classes && entryScope.classes.length && !entryScope.classes.some(c=>String(c||'').trim()===cls)) throw new Error('You are only allowed to enter marks for class '+entryScope.classes.join(', ')); if(entryScope.subjects && entryScope.subjects.length && !entryScope.subjects.some(sn2=>String(sn2||'').trim().toLowerCase()===sn.toLowerCase())) throw new Error('You can only enter marks for '+entryScope.subjects.join(', ') ); } const g=marks!==null? gradeFor(marks,boundaries) : {grade:null}; ins.run(exam_id, student_id, subject_id, marks, g.grade, e.remark||null, status, req.user.id, now); const sn=subjNameMap[subject_id]; if(sn) leg.run(exam_id, student_id, sn, marks, g.grade, e.remark||null); saved++; } })(); res.json({ok:true, saved}); }catch(e){ res.status(400).json({error:e.message}); }});
+// EXAM GRID
+app.get('/api/exams/:id/grid', verify, authorize('exams:read','exams','exams:enter'), (req,res)=>{ const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id); if(!exam) return res.status(404).json({error:'Not found'}); const accG=roleExamAccess(req.user, exam); if(accG.classes!==null && !accG.classes.length) return res.status(403).json({error:'Exam grid not in your class scope'}); let subjects=db.prepare('SELECT es.subject_id as id, s.name, s.code, es.max_marks, s.color FROM exam_subjects es JOIN subjects s ON s.id=es.subject_id WHERE es.exam_id=? ORDER BY s.name').all(exam.id); let students=examStudentScope(exam); if(accG.classes!==null && accG.classes.length) students=students.filter(st=> accG.classes.includes(String(st.class_name||'').trim())); if(accG.subjects && accG.subjects.length) subjects=subjects.filter(sub=> accG.subjects.some(s=>String(s||'').trim().toLowerCase()===String(sub.name||'').trim().toLowerCase())); if(req.query.class_name) students=students.filter(st=> String(st.class_name||'').trim()===String(req.query.class_name).trim()); if(req.query.subject) subjects=subjects.filter(sub=> String(sub.name||'').trim().toLowerCase()===String(req.query.subject).trim().toLowerCase()); const results=db.prepare('SELECT student_id, subject_id, marks, grade, remark, status FROM exam_results WHERE exam_id=?').all(exam.id); const bySt={}; results.forEach(r=>{ (bySt[r.student_id]=bySt[r.student_id]||{})[String(r.subject_id)]={marks:r.marks,status:r.status,remark:r.remark,grade:r.grade}; }); res.json({exam_id:exam.id, status:exam.status, role_access:accG, subjects:subjects, students: students.map(st=>({id:st.id, admission_no:st.admission_no, name:st.first_name+' '+st.last_name, class_name:st.class_name, stream_name:st.stream_name, results:bySt[st.id]||{}}))}); });
+// COMPILE
+app.post('/api/exams/:id/compile', verify, authorize('exams:compile','exams'), (req,res)=>{ const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id); if(!exam) return res.status(404).json({error:'Exam not found'}); const subjects=db.prepare('SELECT es.subject_id, s.name, s.code, es.max_marks FROM exam_subjects es JOIN subjects s ON s.id=es.subject_id WHERE es.exam_id=? ORDER BY s.name').all(exam.id); if(!subjects.length) return res.status(400).json({error:'Add subjects to the exam before compiling'}); const scope=examStudentScope(exam); if(!scope.length) return res.status(400).json({error:'No students in exam class/stream scope'}); const accC=roleExamAccess(req.user,exam); if(!accC.canCompile) return res.status(403).json({error:'You are not allowed to compile this exam'+(req.user.role==='class_teacher'?' - class teacher can only compile their own class(es).':'')+''}); const rawResults=db.prepare('SELECT * FROM exam_results WHERE exam_id=?').all(exam.id); const bySt={}; rawResults.forEach(r=>{ (bySt[r.student_id]=bySt[r.student_id]||{})[String(r.subject_id)]=r; }); const {scale,boundaries}=bankGrading(exam); const compiled=[]; const subjStats={}; subjects.forEach(sub=>{ subjStats[sub.subject_id]={subject_id:sub.subject_id,subject_name:sub.name,marks:[],entered:0}; }); for(const st of scope){ const present=[]; for(const sub of subjects){ const r=bySt[st.id]&&bySt[st.id][String(sub.subject_id)]; const status=r?r.status:'Absent'; const marks=r?Number(r.marks):null; const ps=subjStats[sub.subject_id]; if(status==='Present' && marks!==null && !isNaN(marks)){ present.push(marks); ps.marks.push(marks); ps.entered++; } } if(!present.length) continue; const total=present.reduce((a,b)=>a+b,0); const average=total/present.length; const g=gradeFor(average,boundaries); const totPoints=present.reduce((s,m)=>s+(gradeFor(m,boundaries).points||0),0); compiled.push({student_id:st.id,name:st.first_name+' '+st.last_name,admission_no:st.admission_no,class_name:st.class_name,stream_name:st.stream_name,total:Number(total.toFixed(2)),average:Number(average.toFixed(2)),grade:g.grade,aggregate:Number(totPoints.toFixed(2)),division:gradeDivision(average),subject_count:subjects.length,present_count:present.length}); } compiled.sort((a,b)=>b.average-a.average||b.total-a.total||a.aggregate-b.aggregate); compiled.forEach((c,i)=>c.position=i+1); const clsG={}; compiled.forEach(c=>(clsG[c.class_name]=clsG[c.class_name]||[]).push(c)); Object.values(clsG).forEach(g=>g.sort((a,b)=>b.average-a.average||b.total-a.total).forEach((c,i)=>c.class_position=i+1)); const stmG={}; compiled.filter(c=>c.stream_name).forEach(c=>(stmG[c.stream_name]=stmG[c.stream_name]||[]).push(c)); Object.values(stmG).forEach(g=>g.sort((a,b)=>b.average-a.average||b.total-a.total).forEach((c,i)=>c.stream_position=i+1)); const upsert=db.prepare(`INSERT INTO exam_compiled_results (exam_id,student_id,total,average,grade,aggregate,division,position,class_position,stream_position,class_name,stream_name,subject_count,present_count) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(exam_id,student_id) DO UPDATE SET total=excluded.total, average=excluded.average, grade=excluded.grade, aggregate=excluded.aggregate, division=excluded.division, position=excluded.position, class_position=excluded.class_position, stream_position=excluded.stream_position, class_name=excluded.class_name, stream_name=excluded.stream_name, subject_count=excluded.subject_count, present_count=excluded.present_count`); db.transaction(()=>{ for(const c of compiled) upsert.run(exam.id,c.student_id,c.total,c.average,c.grade,c.aggregate,c.division,c.position,c.class_position||null,c.stream_position||null,c.class_name,c.stream_name||null,c.subject_count,c.present_count); })(); const leg=db.prepare('INSERT OR REPLACE INTO compiled_results (exam_id,student_id,total,average,aggregate,division,position) VALUES (?,?,?,?,?,?,?)'); db.transaction(()=>{ for(const c of compiled) leg.run(exam.id,c.student_id,c.total,c.average,c.aggregate,c.division,c.position); })(); const studentTotal=scope.length; const insStat=db.prepare('INSERT OR REPLACE INTO exam_subject_stats (exam_id,subject_id,student_count,entered_count,mean,highest,lowest,pass_count,pass_rate) VALUES (?,?,?,?,?,?,?,?,?)'); db.transaction(()=>{ Object.values(subjStats).forEach(ss=>{ const m=ss.marks; const count=m.length; const passThreshold=exam.pass_mark||40; insStat.run(exam.id,ss.subject_id,studentTotal,count,count?Number((m.reduce((a,b)=>a+b,0)/count).toFixed(2)):null,count?Math.max(...m):null,count?Math.min(...m):null,m.filter(x=>x>=passThreshold).length,count?Number((m.filter(x=>x>=passThreshold).length/count*100).toFixed(1)):null); }); })(); db.prepare('UPDATE exams SET status=?, updated_at=? WHERE id=?').run('Compiled', new Date().toISOString(), exam.id); res.json({compiled:compiled.length,exam:exam.name,scale:scale.name,subjects:subjects.length,top:compiled.slice(0,3)}); });
+// COMPILED results + stats
+app.get('/api/exams/:id/compiled', verify, authorize('exams:read','exams:compile','exams'), (req,res)=>{ const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id); if(!exam) return res.status(404).json({error:'Not found'}); const accD=roleExamAccess(req.user, exam); if(accD.classes!==null && !accD.classes.length) return res.status(403).json({error:'Compiled results not in your class scope'}); let rows=db.prepare('SELECT es.*, s.first_name, s.last_name, s.admission_no, es.class_name FROM exam_compiled_results es JOIN students s ON s.id=es.student_id WHERE es.exam_id=? ORDER BY es.position').all(req.params.id); if(accD.classes!==null) rows=rows.filter(r=> accD.classes.includes(String(r.class_name||'').trim())); res.json(rows); });
+app.get('/api/exams/:id/stats', verify, authorize('exams:read','exams'), (req,res)=>{ res.json(db.prepare('SELECT st.*, s.name, s.code FROM exam_subject_stats st JOIN subjects s ON s.id=st.subject_id WHERE st.exam_id=? ORDER BY s.name').all(req.params.id)); });
+// PUBLISH / UNLOCK
+app.post('/api/exams/:id/publish', verify, authorize('exams'), (req,res)=>{ if(!['admin','headteacher','dos'].includes(req.user.role)) return res.status(403).json({error:'Only admin/headteacher/DOS can publish'}); const exam=db.prepare('SELECT * FROM exams WHERE id=?').get(req.params.id); if(!exam) return res.status(404).json({error:'Not found'}); if(!db.prepare('SELECT COUNT(*) as n FROM exam_compiled_results WHERE exam_id=?').get(exam.id).n) return res.status(400).json({error:'Compile results first before publishing'}); db.prepare('UPDATE exams SET status=?, updated_at=? WHERE id=?').run('Published',new Date().toISOString(),exam.id); res.json({ok:true}); });
+app.post('/api/exams/:id/unlock', verify, authorize('exams'), (req,res)=>{ if(req.user.role!=='admin') return res.status(403).json({error:'Only admin can unlock'}); db.prepare('UPDATE exams SET status=?, updated_at=? WHERE id=?').run('Open',new Date().toISOString(),req.params.id); res.json({ok:true}); });
 app.use('/api/fees-structure', crud('fees_structure','fees'));
 app.use('/api/payments', crud('payments','fees'));
 app.use('/api/expenses', crud('expenses','expenses'));

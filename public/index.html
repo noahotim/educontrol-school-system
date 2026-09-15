@@ -804,10 +804,25 @@ function previewPhoto(input, previewId){
   reader.onload=e=> document.getElementById(previewId).innerHTML=`<img src="${e.target.result}" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #3b82f6;"><div class="muted" style="font-size:10px;">Ready to upload</div>`;
   reader.readAsDataURL(file);
 }
+async function compressImage(file){
+  if(file.size<=600*1024) return file;
+  try{
+    const img=await new Promise((res,rej)=>{ const i=new Image(); const u=URL.createObjectURL(file); i.onload=()=>{URL.revokeObjectURL(u);res(i);}; i.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('decode'));}; i.src=u; });
+    const maxDim=1280; let w=img.naturalWidth, h=img.naturalHeight;
+    if(!w||!h) return file;
+    if(w>h && w>maxDim){ h=h*maxDim/w; w=maxDim; } else if(h>maxDim){ w=w*maxDim/h; h=maxDim; }
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(img,0,0,w,h);
+    const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',0.85));
+    if(!blob) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/,'.jpg'), {type:'image/jpeg'});
+  }catch(e){ return file; }
+}
 async function uploadPhoto(fileInput, studentId, staffId){
-  const file=fileInput.files[0];
-  if(!file) return null;
-  if(file.size>2*1024*1024) throw new Error('Photo too large (max 2MB)');
+  const chosen=fileInput.files[0];
+  if(!chosen) return null;
+  const file=await compressImage(chosen);
+  if(file.size>2*1024*1024) throw new Error('Photo too large (max 2MB after compression)');
   const fd=new FormData();
   fd.append('photo', file);
   if(studentId) fd.append('student_id', studentId);
@@ -918,7 +933,7 @@ function openStudentModal(id){
     <!-- TAB 2: Guardians -->
     <div class="stu-tab" data-tab="2" style="display:none;">
       <div id="guardiansList">${guardians.length? guardians.map((g,i)=>_guardianRow(g,i)).join('') : _guardianRow({},0)}</div>
-      <button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="document.getElementById('guardiansList').insertAdjacentHTML('beforeend',${JSON.stringify(_guardianRow({},99)).replace(/'/g,"\\'")})"><i class="ri-add-line"></i> Add Guardian</button>
+      <button class="btn btn-sm btn-outline" style="margin-top:6px;" onclick="addGuardianRow()"><i class="ri-add-line"></i> Add Guardian</button>
     </div>
     <!-- TAB 3: Academic Background -->
     <div class="stu-tab" data-tab="3" style="display:none;">
@@ -958,11 +973,15 @@ function openStudentModal(id){
       ${isEdit?`<div style="margin-top:12px;padding:10px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;"><b style="color:#dc2626;">Danger Zone</b><div style="margin-top:6px;display:flex;gap:8px;"><button class="btn btn-sm btn-danger" onclick="delStudent(${id})"><i class="ri-delete-bin-line"></i> Soft Delete</button> ${s.deleted_at?`<button class="btn btn-sm btn-outline" onclick="restoreStudent(${id})"><i class="ri-refresh-line"></i> Restore</button>`:''}</div></div>`:''}
     </div>
     <div style="display:flex;gap:8px;margin-top:14px;">
-      <button class="btn btn-sm" onclick="saveStudent(${id||0})"><i class="ri-save-line"></i> Save</button>
+      <button id="saveStudentBtn" class="btn btn-sm" onclick="saveStudent(${id||0})"><i class="ri-save-line"></i> Save</button>
       ${isEdit?`<button class="btn btn-sm btn-outline" onclick="viewStudent(${id})"><i class="ri-eye-line"></i> View Profile</button>`:''}
       <button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button>
     </div>`, '900px');
   });
+}
+function addGuardianRow(){
+  const list=document.getElementById('guardiansList');
+  if(list) list.insertAdjacentHTML('beforeend', _guardianRow({}, document.querySelectorAll('#guardiansList .guardian-row').length));
 }
 function switchStudentTab(idx){
   document.querySelectorAll('.stu-tab').forEach(t=>t.style.display='none');
@@ -984,7 +1003,11 @@ function addDocRow(){
 async function delStudentDoc(id){ if(!confirm('Delete document?'))return; await apiDel('/api/student-documents/'+id); toast('Deleted','success'); }
 
 async function saveStudent(id){
-  const body={
+  if(window._savingStudent) return; window._savingStudent=true;
+  const btn=document.getElementById('saveStudentBtn');
+  if(btn){ btn.disabled=true; btn.innerHTML='<i class="ri-loader-4-line"></i> Saving...'; }
+  try{
+    const body={
     first_name:$('#f_first').value, middle_name:$('#f_middle').value, last_name:$('#f_last').value,
     preferred_name:$('#f_prefname').value, gender:$('#f_gender').value,
     admission_no:$('#f_adm').value||undefined, date_of_birth:$('#f_dob').value,
@@ -1009,14 +1032,19 @@ async function saveStudent(id){
     // Guardians
     guardians:_collectGuardians()
   };
-  if(!body.first_name||!body.last_name) return alert('First & Last name required');
-  try{
+    if(!body.first_name||!body.last_name) return alert('First & Last name required');
     let sid=id;
     if(id) await apiPut('/api/students/'+id, body); else { const res=await apiPost('/api/students', body); sid=res.id; }
-    // Upload photo
+    // Upload photo (compress client-side + retry transient failures)
     const fileInput=document.getElementById('f_photo');
     if(fileInput&&fileInput.files[0]){
-      try{ const url=await uploadPhoto(fileInput,sid,null); await apiPut('/api/students/'+sid,{photo:url}); }catch(e){ alert('Saved but photo failed: '+e.message); }
+      try{
+        let url=null;
+        for(let attempt=0; attempt<3; attempt++){
+          try{ url=await uploadPhoto(fileInput,sid,null); break; }catch(err){ if(attempt===2) throw err; await new Promise(r=>setTimeout(r,1500)); }
+        }
+        await apiPut('/api/students/'+sid,{photo:url});
+      }catch(e){ alert('Saved but photo failed: '+e.message); }
     }
     // Upload new documents
     const docRows=document.querySelectorAll('.new-doc-row');
@@ -1032,6 +1060,7 @@ async function saveStudent(id){
     }
     closeModal(); renderStudents();
   }catch(e){ alert(e.message); }
+  finally{ window._savingStudent=false; if(btn){ btn.disabled=false; btn.innerHTML='<i class="ri-save-line"></i> Save'; } }
 }
 async function delStudent(id){ if(!confirm('Soft delete this student? They will be marked Withdrawn but can be restored.')) return; await apiDel('/api/students/'+id); renderStudents(); }
 async function restoreStudent(id){ await apiPost('/api/students/'+id+'/restore',{}); toast('Restored','success'); renderStudents(); }
