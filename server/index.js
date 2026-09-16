@@ -68,24 +68,24 @@ function maintenanceGuard(req,res,next){
   let m=null;
   try{ m=maintenanceNow(); }catch(e){ return next(); }
   if(!m || !m.enabled) return next();
-  // (1) NON-API requests ALWAYS render: login page (index.html), ALL static assets (css/js/fonts/images/..),
-  //     progressify + parent-portal pages, /verify-student. The UI must ALWAYS load so a logged-out admin
-  //     can still see the login page and get back in to switch maintenance OFF. Filter: NOT /api/*
-  if(!req.path.startsWith('/api/')) return next();
-  // (2) Public + auth trio ALWAYS reachable (health check, me, logout) so the SPA can render + log back out.
-  if(req.path==='/api/maintenance/status' || req.path==='/api/me' || req.path==='/api/logout') return next();
-  // (3) Login: ONLY admin-role accounts may authenticate while maintenance is on
-  if(req.path==='/api/login'){
+  // Robust non-API check: serve login page + ALL static assets even when locked.
+  // Use originalUrl + path to handle proxies / mounts. Anything NOT starting with /api is the SPA.
+  const p = (req.path || req.originalUrl || '').split('?')[0];
+  if(!p.startsWith('/api')) return next();
+  // Public trio: status check + me + logout stay reachable so the login page can render
+  if(p==='/api/maintenance/status' || p==='/api/me' || p==='/api/logout' || p==='/api/verify-student' || p==='/verify') return next();
+  // Login: ONLY admin-role accounts may authenticate while maintenance is on
+  if(p==='/api/login'){
     const {username}=req.body||{};
     if(username){
       try{
-        const u=db.prepare('SELECT role FROM users WHERE username=?').get(username);
+        const u=db.prepare('SELECT role FROM users WHERE username=?').get(String(username).trim());
         if(u && u.role==='admin') return next();
       }catch(e){}
     }
     return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
   }
-  // (4) Everything else: a real admin session (DB-verified) is required
+  // Everything else requires a live admin session (DB-verified)
   if(adminTokenOk(req)) return next();
   return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
 }
@@ -101,29 +101,6 @@ function adminTokenOk(req){
     const u=db.prepare('SELECT role FROM users WHERE id=?').get(decoded.id);
     return !!(u && u.role==='admin');
   }catch(e){ return false; }
-}
-function maintenanceGuard(req,res,next){
-  let m=null;
-  try{ m=maintenanceNow(); }catch(e){ return next(); }
-  if(!m || !m.enabled) return next();
-  // Login page + ALL static assets always render so the UI loads — admin can always get back in to switch maintenance OFF
-  if(!req.path.startsWith('/api/')) return next();
-  // Public/health + auth endpoints stay reachable (status check, admin verify/login, me, logout)
-  if(req.path==='/api/maintenance/status' || req.path==='/verify' || req.path==='/api/verify-student' || req.path==='/api/me' || req.path==='/api/logout') return next();
-  // Login: ONLY admin-role accounts may authenticate while maintenance is on
-  if(req.path==='/api/login'){
-    const {username}=req.body||{};
-    if(username){
-      try{
-        const u=db.prepare('SELECT role FROM users WHERE username=?').get(username);
-        if(u && u.role==='admin') return next();
-      }catch(e){}
-    }
-    return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
-  }
-  // Everything else: a real admin session (DB-verified) is required
-  if(adminTokenOk(req)) return next();
-  return res.status(503).json({error:'MAINTENANCE', maintenance:true, hard:true, message: (m&&m.message)||'System under maintenance', enabled_at: m?m.enabled_at:null, enabled_by: m?m.enabled_by:null, enabled_until: m?m.enabled_until:null});
 }
 
 // Auth routes
