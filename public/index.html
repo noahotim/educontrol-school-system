@@ -1772,7 +1772,7 @@ async function renderExams(){
   const isSubjectTeacher = user.role==='subject_teacher' || canAccess('exams:enter');
   // Banner: clear who does what — especially when class_teacher is also subject_teacher
   let roleBanner='';
-  if(user.role==='subject_teacher' && !isClassTeacher){
+  if(myAssign.length && !isClassTeacher && (user.role==='subject_teacher' || user.role==='teacher')){
     roleBanner=`<div class="alert" style="background:#f3e8ff; border:1px solid #d8b4fe; color:#6b21a8; margin-bottom:10px; font-size:12px;"><b><i class="ri-quill-pen-line"></i> Subject Teacher:</b> You enter marks <b>only for your assigned subject & class</b>. Go to <b>My Subjects</b> below → Enter Marks. You cannot compile. The class teacher will compile once you have entered.</div>`;
   } else if(isClassTeacher && !isSubjectTeacher && user.role!=='admin' && user.role!=='teacher'){
     roleBanner=`<div class="alert" style="background:#e0f2fe; border:1px solid #7dd3fc; color:#0c4a6e; margin-bottom:10px; font-size:12px;"><b><i class="ri-team-line"></i> Class Teacher:</b> You <b>compile</b> results for your class after subject teachers have entered. You view all subjects. ${myAssign.length?'<span class="badge badge-blue" style="margin-left:6px;">Also subject teacher for '+myAssign.map(a=>a.subject+' ('+a.class+')').join(', ')+'</span>':''}</div>`;
