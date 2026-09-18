@@ -2,7 +2,7 @@ services:
   - type: web
     name: educontrol
     env: node
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: npm start
     envVars:
@@ -10,8 +10,5 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
-    # Persist SQLite across deploys/restarts — REQUIRES Starter plan or higher (free has ephemeral FS, data wipes on restart)
-    disk:
-      name: educontrol-data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
+    # FREE plan: disk is ignored (ephemeral FS) — data wipes on restart. Use Download Backup daily.
+    # To make data permanent, change to plan: starter and keep this disk block.
