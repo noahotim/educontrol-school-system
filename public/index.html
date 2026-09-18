@@ -1851,11 +1851,10 @@ async function openResultModal(examId, examName){
     assignSubjects=[...new Set(myAssign.map(a=>a.subject))];
     assignClasses=[...new Set(myAssign.map(a=>a.class))];
   }
-  // If subject teacher, restrict students to assigned classes only; else filter to exam class if exists
+  // If subject teacher, show students from your assigned classes — selectable regardless of exam class
   let bulkStudents;
   if(isSubjectOnly){
     bulkStudents = allStudents.filter(s=> assignClasses.includes(s.class));
-    if(examClass && !assignClasses.includes(examClass)) bulkStudents=[]; // exam class not in your assignment
   } else {
     bulkStudents = examClass ? allStudents.filter(s=> s.class===examClass) : allStudents;
   }
@@ -1863,7 +1862,7 @@ async function openResultModal(examId, examName){
   let classInfo;
   if(isSubjectOnly){
     classInfo = assignClasses.length ? `Your assigned class${assignClasses.length>1?'es':''} <b>${assignClasses.join(', ')}</b> — ${bulkStudents.length} pupils • Your subject${assignSubjects.length>1?'s':''} <b>${assignSubjects.join(', ')}</b>` : `No assigned class`;
-    if(examClass) classInfo+=` • Exam class <b>${examClass}</b> ${assignClasses.includes(examClass)? '<span class="badge badge-green">✓ yours</span>':'<span class="badge badge-red">not yours — cannot enter</span>'}`;
+    if(examClass) classInfo+=` • Exam <b>${examClass}</b> ${assignClasses.includes(examClass)? '<span class="badge badge-green">✓ your class</span>':'<span class="badge badge-amber">choose your class below</span>'}`;
   } else {
     classInfo = examClass ? `Class <b>${examClass}</b> — ${bulkStudents.length} pupils` : `All Classes — ${bulkStudents.length} pupils (exam has no class)`;
   }
