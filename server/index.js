@@ -1138,15 +1138,16 @@ app.post('/api/exams', verify, authorize('exams'), (req,res)=>{
   if(!name) return res.status(400).json({error:'Exam name required'});
   let rawClasses=Array.isArray(classes)||classes?classes:[cls];
   if(!Array.isArray(rawClasses)) rawClasses=[rawClasses];
-  // Accept BOTH numeric class ids AND class names ("P7") — the UI exam modal sends class NAME text
-  const classById=db.prepare('SELECT id,name FROM classes');
+  // Accept BOTH numeric class ids AND class names ("P7") — the UI exam modal sends class id
+  const allClasses=db.prepare('SELECT id,name FROM classes').all();
+  const classByIdMap=new Map(allClasses.map(c=>[c.id,c]));
   const classList=rawClasses.filter(Boolean).map(v=>{
     const n=Number(v);
     if(Number.isInteger(n)&&n>0){
-      const r=classById.get(n);
+      const r=classByIdMap.get(n);
       return r?r.id:null;
     }
-    const r=classById.all().find(c=>String(c.name||'').trim().toLowerCase()===String(v||'').trim().toLowerCase());
+    const r=allClasses.find(c=>String(c.name||'').trim().toLowerCase()===String(v||'').trim().toLowerCase());
     return r?r.id:null;
   }).filter((v,i,a)=>v!=null&&a.indexOf(v)===i);
   if(!classList.length) return res.status(400).json({error:'Select at least one class'});
