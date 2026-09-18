@@ -1787,11 +1787,12 @@ async function renderExams(){
     mySubjectsHTML=`<div class="card" style="margin-bottom:12px;"><h4><i class="ri-book-open-line"></i> My Subjects — where you enter marks</h4><p class="muted" style="font-size:11px;">You are assigned to ${myAssign.length} subject/class — click Enter to go directly to marks entry filtered to that subject.</p><div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; margin-top:8px;">${myAssign.map(a=>`<div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px; background:#fff;"><div style="font-weight:700;"><i class="ri-bookmark-line"></i> ${a.subject}</div><div class="muted" style="font-size:11px;">Class <b>${a.class}</b> • ${a.class_teacher? 'Class: '+a.class_teacher : ''}</div><button class="btn btn-sm" style="margin-top:8px; background:#7c3aed; color:#fff;" onclick="openResultModalForAssignment(${exams[0]?.id||'null'}, '${a.subject}', '${a.class}')"><i class="ri-quill-pen-line"></i> Enter Marks</button></div>`).join('')}</div></div>`;
   }
   const canCompileAll = canAccess('exams:compile') || isClassTeacher;
+  const canManageExams = ['admin','headteacher','dos'].includes(user.role);
   $('#content').innerHTML=`
   ${roleBanner}
   ${mySubjectsHTML}
-  <div class="toolbar"><button class="btn btn-sm" onclick="openExamModal()">+ Create Exam</button></div>
-  <div class="table-wrap"><table><thead><tr><th>Exam</th><th>Term</th><th>Year</th><th>Class</th><th>Date</th><th></th></tr></thead><tbody>${exams.map(e=>`<tr><td><b>${e.name}</b></td><td>${e.term||''}</td><td>${e.year||''}</td><td>${e.class||''}</td><td>${e.date||''}</td><td><button class="btn btn-sm btn-outline" onclick="openResultModal(${e.id},'${e.name.replace(/'/g,'')}')">Enter Results</button> <button class="btn btn-sm btn-outline" onclick="viewResults(${e.id})">View</button> ${canCompileAll?`<button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="compileResults(${e.id})"><i class="ri-checkbox-circle-line"></i> Compile</button>`: `<span class="muted" style="font-size:10px; margin-left:4px;">Subject teacher cannot compile</span>`} <button class="btn btn-sm btn-danger" onclick="delExam(${e.id})">Del</button></td></tr>`).join('')}</tbody></table></div>
+  ${canManageExams?`<div class="toolbar"><button class="btn btn-sm" onclick="openExamModal()">+ Create Exam</button></div>`:''}
+  <div class="table-wrap"><table><thead><tr><th>Exam</th><th>Term</th><th>Year</th><th>Class</th><th>Date</th><th></th></tr></thead><tbody>${exams.map(e=>`<tr><td><b>${e.name}</b></td><td>${e.term||''}</td><td>${e.year||''}</td><td>${e.class||''}</td><td>${e.date||''}</td><td><button class="btn btn-sm btn-outline" onclick="openResultModal(${e.id},'${e.name.replace(/'/g,'')}')">Enter Results</button> <button class="btn btn-sm btn-outline" onclick="viewResults(${e.id})">View</button> ${canCompileAll?`<button class="btn btn-sm" style="background:#0f172a; color:#fff;" onclick="compileResults(${e.id})"><i class="ri-checkbox-circle-line"></i> Compile</button>`: `<span class="muted" style="font-size:10px; margin-left:4px;">Subject teacher cannot compile</span>`} ${canManageExams?`<button class="btn btn-sm btn-danger" onclick="delExam(${e.id})">Del</button>`:''}</td></tr>`).join('')}</tbody></table></div>
   <div id="resView" style="margin-top:16px"></div>`;
 }
 function openResultModalForAssignment(examId, subject, cls){
@@ -1821,8 +1822,20 @@ function filterBulkByClass(){
   const info=document.querySelector('#bulkMode .muted');
   if(info) info.textContent=`${vis} students shown — filtered to ${cls}`;
 }
-function openExamModal(){ openModal(`<h3>Create Exam</h3><div class="form-grid" style="margin-top:12px"><div><label>Name</label><input id="e_name" class="input" placeholder="End of Term I"></div><div><label>Class</label><input id="e_class" class="input" placeholder="P7"></div><div><label>Term</label><input id="e_term" class="input" value="Term I"></div><div><label>Year</label><input id="e_year" class="input" value="2026"></div><div><label>Date</label><input id="e_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="saveExam()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`); }
-async function saveExam(){ const body={name:$('#e_name').value, class:$('#e_class').value, term:$('#e_term').value, year:$('#e_year').value, date:$('#e_date').value}; if(!body.name) return alert('Name required'); await apiPost('/api/exams',body); closeModal(); renderExams(); }
+async function openExamModal(){
+  let classes=[];
+  try{ classes=await apiGet('/api/classes'); }catch(e){ classes=[]; }
+  const options=classes.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  openModal(`<h3>Create Exam</h3><div class="form-grid" style="margin-top:12px"><div><label>Name</label><input id="e_name" class="input" placeholder="End of Term I"></div><div><label>Class</label><select id="e_class" class="input">${options||'<option value="">No classes available</option>'}</select></div><div><label>Term</label><input id="e_term" class="input" value="Term I"></div><div><label>Year</label><input id="e_year" class="input" value="2026"></div><div><label>Date</label><input id="e_date" type="date" class="input" value="${today()}"></div></div><div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-sm" onclick="saveExam()">Save</button><button class="btn btn-sm btn-outline" onclick="closeModal()">Cancel</button></div>`);
+}
+async function saveExam(){
+  const classId=parseInt($('#e_class').value,10);
+  const body={name:$('#e_name').value.trim(), classes:(Number.isInteger(classId)&&classId>0)?[classId]:[], term:$('#e_term').value, year:$('#e_year').value, date:$('#e_date').value};
+  if(!body.name) return alert('Name required');
+  if(!body.classes.length) return alert('Select a class');
+  try{ await apiPost('/api/exams',body); closeModal(); renderExams(); }
+  catch(e){ alert('Could not save exam: '+e.message); }
+}
 async function delExam(id){ if(!confirm('Delete exam & results?')) return; await apiDel('/api/exams/'+id); renderExams(); }
 async function openResultModal(examId, examName){
   const subjects=await apiGet('/api/subjects');
